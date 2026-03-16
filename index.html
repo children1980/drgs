@@ -1,0 +1,1940 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#185FA5">
+<meta name="description" content="基于CHS-DRG 2.0规则的出院诊断AI优化助手">
+<title>DRG 诊断优化助手</title>
+
+<!-- PWA Manifest inline -->
+<link rel="manifest" href="data:application/json,{%22name%22:%22DRG诊断优化助手%22,%22short_name%22:%22DRG助手%22,%22display%22:%22standalone%22,%22theme_color%22:%22%23185FA5%22,%22background_color%22:%22%23ffffff%22}">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='32' fill='%23185FA5'/%3E%3Cpath d='M56 60h80M56 90h50M56 120h65M56 150h40' stroke='white' stroke-width='10' stroke-linecap='round'/%3E%3C/svg%3E">
+
+<style>
+/* ─── Reset & Base ─────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --blue:       #185FA5;
+  --blue-dark:  #0C447C;
+  --blue-light: #E6F1FB;
+  --blue-mid:   #378ADD;
+  --green:      #3B6D11;
+  --green-bg:   #EAF3DE;
+  --amber:      #854F0B;
+  --amber-bg:   #FAEEDA;
+  --red:        #791F1F;
+  --red-bg:     #FCEBEB;
+  --gray-bg:    #F5F5F3;
+  --gray-line:  #E5E4E0;
+  --text-main:  #1A1A18;
+  --text-sub:   #5F5E5A;
+  --text-hint:  #9C9A94;
+  --white:      #FFFFFF;
+  --radius-sm:  6px;
+  --radius-md:  10px;
+  --radius-lg:  14px;
+  --font:       -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --shadow:     0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --blue-light: #0C2A47;
+    --blue-mid:   #5BA3E8;
+    --green-bg:   #1A2E0A;
+    --amber-bg:   #2E1F06;
+    --red-bg:     #2E0A0A;
+    --gray-bg:    #1E1E1C;
+    --gray-line:  #2C2C2A;
+    --text-main:  #E8E6E0;
+    --text-sub:   #9C9A94;
+    --text-hint:  #5F5E5A;
+    --white:      #141412;
+    --shadow:     0 1px 3px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+  }
+}
+
+html { height: 100%; font-size: 16px; -webkit-text-size-adjust: 100%; }
+body {
+  height: 100%; font-family: var(--font);
+  background: var(--gray-bg); color: var(--text-main);
+  line-height: 1.5; -webkit-font-smoothing: antialiased;
+}
+
+/* ─── Layout ───────────────────────────────────────── */
+.app {
+  max-width: 480px; margin: 0 auto;
+  min-height: 100%; min-height: 100vh;
+  display: -webkit-flex; display: flex;
+  -webkit-flex-direction: column; flex-direction: column;
+  background: var(--white);
+}
+
+/* ─── Header ───────────────────────────────────────── */
+.header {
+  background: var(--blue);
+  padding: 14px 16px 12px;
+  position: sticky; top: 0; z-index: 100;
+  display: flex; align-items: center; gap: 10px;
+}
+.header-icon {
+  width: 36px; height: 36px; background: rgba(255,255,255,.2);
+  border-radius: 10px; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.header-icon svg { width: 20px; height: 20px; }
+.header-title { color: #fff; font-size: 15px; font-weight: 600; }
+.header-sub   { color: rgba(255,255,255,.7); font-size: 11px; margin-top: 1px; }
+.header-right { margin-left: auto; }
+.api-btn {
+  background: rgba(255,255,255,.2); border: none; border-radius: 8px;
+  color: #fff; font-size: 12px; padding: 5px 10px; cursor: pointer;
+  font-family: var(--font); white-space: nowrap;
+}
+.api-btn:hover { background: rgba(255,255,255,.3); }
+
+/* ─── Tabs ─────────────────────────────────────────── */
+.tabs {
+  display: flex; background: var(--white);
+  border-bottom: 1px solid var(--gray-line);
+  position: sticky; top: 64px; z-index: 99;
+}
+.tab-btn {
+  flex: 1; padding: 11px 4px; font-size: 12px; font-weight: 400;
+  color: var(--text-sub); border: none; background: none;
+  cursor: pointer; border-bottom: 2px solid transparent;
+  transition: all .15s; font-family: var(--font); line-height: 1.2;
+}
+.tab-btn.active { color: var(--blue); border-bottom-color: var(--blue); font-weight: 500; }
+.tab-btn:hover:not(.active) { color: var(--text-main); }
+
+/* ─── Main Content ──────────────────────────────────── */
+.main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.panel { display: none; padding: 16px; }
+.panel.active { display: block; }
+
+/* ─── Section Label ─────────────────────────────────── */
+.section-label {
+  font-size: 11px; font-weight: 600; color: var(--text-hint);
+  text-transform: uppercase; letter-spacing: .06em; margin: 16px 0 8px;
+}
+.section-label:first-child { margin-top: 0; }
+
+/* ─── Cards & Surfaces ──────────────────────────────── */
+.card {
+  background: var(--white); border: 1px solid var(--gray-line);
+  border-radius: var(--radius-lg); overflow: hidden;
+  box-shadow: var(--shadow); margin-bottom: 12px;
+}
+.card-header {
+  background: var(--gray-bg); border-bottom: 1px solid var(--gray-line);
+  padding: 10px 14px; display: flex; align-items: center;
+  justify-content: space-between;
+}
+.card-header h3 { font-size: 13px; font-weight: 500; }
+
+/* ─── Upload Zone ───────────────────────────────────── */
+.upload-zone {
+  border: 1.5px dashed var(--gray-line); border-radius: var(--radius-lg);
+  padding: 24px 16px; text-align: center; cursor: pointer;
+  transition: all .15s; position: relative; background: var(--gray-bg);
+  margin-bottom: 12px;
+}
+.upload-zone:hover { border-color: var(--blue-mid); background: var(--blue-light); }
+.upload-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.upload-zone .icon-wrap {
+  width: 48px; height: 48px; background: var(--blue-light);
+  border-radius: 12px; display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 10px;
+}
+.upload-zone .icon-wrap svg { width: 24px; height: 24px; stroke: var(--blue); }
+.upload-zone h3 { font-size: 14px; font-weight: 500; color: var(--text-main); margin-bottom: 4px; }
+.upload-zone p  { font-size: 12px; color: var(--text-sub); }
+
+/* ─── Dept Selector ─────────────────────────────────── */
+.dept-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.dept-chip {
+  padding: 6px 4px; border-radius: 20px; font-size: 11px; cursor: pointer;
+  border: 1px solid var(--gray-line); background: var(--white);
+  color: var(--text-sub); transition: all .15s; font-family: var(--font);
+  white-space: nowrap; text-align: center; overflow: hidden;
+  text-overflow: ellipsis;
+  -webkit-tap-highlight-color: transparent;
+}
+.dept-chip.active { background: var(--blue); color: #fff; border-color: var(--blue); font-weight: 500; }
+.dept-chip:hover:not(.active) { border-color: var(--blue-mid); color: var(--blue); }
+
+/* ─── Textarea ──────────────────────────────────────── */
+textarea {
+  width: 100%; border: 1px solid var(--gray-line); border-radius: var(--radius-md);
+  padding: 10px 12px; font-family: var(--font); font-size: 13px;
+  resize: vertical; min-height: 100px; color: var(--text-main);
+  background: var(--white); line-height: 1.6;
+}
+textarea:focus { outline: none; border-color: var(--blue-mid); }
+textarea::placeholder { color: var(--text-hint); }
+
+/* ─── OR Divider ─────────────────────────────────────── */
+.or-divider {
+  text-align: center; margin: 10px 0; font-size: 12px; color: var(--text-hint);
+  position: relative;
+}
+.or-divider::before, .or-divider::after {
+  content: ''; position: absolute; top: 50%; width: 42%; height: 1px;
+  background: var(--gray-line);
+}
+.or-divider::before { left: 0; } .or-divider::after { right: 0; }
+
+/* ─── Buttons ────────────────────────────────────────── */
+.btn-primary {
+  width: 100%; padding: 12px; background: var(--blue); color: #fff;
+  border: none; border-radius: var(--radius-md); font-size: 14px; font-weight: 500;
+  cursor: pointer; transition: background .15s; display: flex;
+  align-items: center; justify-content: center; gap: 7px; font-family: var(--font);
+}
+.btn-primary:hover  { background: var(--blue-dark); }
+.btn-primary:active { transform: scale(.98); }
+.btn-primary:disabled { background: var(--gray-line); color: var(--text-hint); cursor: default; transform: none; }
+
+/* ─── Image Preview ─────────────────────────────────── */
+.img-preview {
+  display: none; margin-bottom: 12px; position: relative;
+}
+.img-preview img {
+  width: 100%; max-height: 180px; object-fit: contain;
+  border-radius: var(--radius-md); border: 1px solid var(--gray-line);
+}
+.img-preview .del-btn {
+  position: absolute; top: 8px; right: 8px; width: 24px; height: 24px;
+  background: rgba(0,0,0,.5); border-radius: 50%; border: none; cursor: pointer;
+  color: #fff; font-size: 14px; display: flex; align-items: center; justify-content: center;
+}
+
+/* ─── Loading Bar ───────────────────────────────────── */
+.loading-wrap { display: none; margin: 12px 0; }
+.loading-wrap.active { display: block; }
+.loading-track { height: 3px; background: var(--gray-line); border-radius: 2px; overflow: hidden; }
+.loading-fill  { height: 100%; width: 0%; background: var(--blue); border-radius: 2px; transition: width .5s ease; }
+.loading-msg   { font-size: 11px; color: var(--text-sub); margin-top: 5px; }
+
+/* ─── Result: Diag List ─────────────────────────────── */
+.diag-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 14px; border-bottom: 1px solid var(--gray-line);
+}
+.diag-item:last-child { border-bottom: none; }
+.rank-badge {
+  width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+  font-size: 11px; font-weight: 600; display: flex; align-items: center;
+  justify-content: center; margin-top: 1px;
+}
+.rank-1 { background: var(--blue);   color: #fff; }
+.rank-2 { background: var(--blue-light); color: var(--blue); }
+.rank-n { background: var(--gray-bg);    color: var(--text-sub); }
+.diag-name { font-size: 13px; font-weight: 500; color: var(--text-main); }
+.diag-meta { font-size: 11px; color: var(--text-sub); margin-top: 2px; font-family: monospace; }
+.diag-reason { font-size: 11px; color: var(--text-sub); margin-top: 3px; line-height: 1.55; }
+
+/* ─── Tags ──────────────────────────────────────────── */
+.tag {
+  display: inline-block; font-size: 10px; font-weight: 500;
+  padding: 1px 7px; border-radius: 10px; margin-right: 3px; margin-top: 3px;
+}
+.tag-main { background: var(--blue-light);  color: var(--blue-dark); }
+.tag-mcc  { background: var(--red-bg);      color: var(--red); }
+.tag-cc   { background: var(--amber-bg);    color: var(--amber); }
+.tag-op   { background: var(--green-bg);    color: var(--green); }
+.tag-op-major { background: var(--green-bg); color: var(--green); }
+.tag-op-minor { background: var(--blue-light); color: var(--blue-dark); }
+.tag-op-diag  { background: var(--gray-bg); color: var(--text-sub); }
+.tag-other{ background: var(--gray-bg);     color: var(--text-sub); }
+
+/* ─── RW Badge ──────────────────────────────────────── */
+.rw-badge { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
+.rw-high  { background: var(--green-bg); color: var(--green); }
+.rw-mid   { background: var(--amber-bg); color: var(--amber); }
+.rw-low   { background: var(--red-bg);   color: var(--red); }
+
+/* ─── Analysis Box ──────────────────────────────────── */
+.analysis-box {
+  margin: 0 14px 14px; padding: 10px 12px;
+  background: var(--gray-bg); border-radius: var(--radius-md);
+  font-size: 12px; line-height: 1.65; color: var(--text-sub);
+}
+.analysis-box strong { color: var(--text-main); font-weight: 500; }
+
+/* ─── Alert ─────────────────────────────────────────── */
+.alert {
+  background: var(--amber-bg); border: 1px solid #E5C97A;
+  border-radius: var(--radius-md); padding: 10px 12px;
+  font-size: 12px; color: var(--amber); line-height: 1.55; margin-bottom: 12px;
+}
+.alert-danger {
+  background: var(--red-bg); border-color: #F0A0A0;
+  color: var(--red);
+}
+
+/* ─── Rule Items ─────────────────────────────────────── */
+.rule-item {
+  padding: 11px 14px; border-bottom: 1px solid var(--gray-line);
+  font-size: 13px;
+}
+.rule-item:last-child { border-bottom: none; }
+.rule-title { font-weight: 500; margin-bottom: 3px; display: flex; align-items: center; gap: 6px; }
+.rule-desc  { font-size: 12px; color: var(--text-sub); line-height: 1.55; }
+.inline-tag { display: inline-block; font-size: 10px; font-weight: 500; padding: 1px 6px; border-radius: 4px; }
+
+/* ─── Dept Rule Panels ──────────────────────────────── */
+.dept-rules-wrap { display: none; }
+.dept-rules-wrap.active { display: block; }
+
+/* ─── History ────────────────────────────────────────── */
+.hist-item {
+  padding: 12px 0; border-bottom: 1px solid var(--gray-line);
+  cursor: pointer;
+}
+.hist-item:last-child { border-bottom: none; }
+.hist-item:hover .hist-name { color: var(--blue); }
+.hist-meta  { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.hist-time  { font-size: 11px; color: var(--text-hint); }
+.hist-name  { font-size: 13px; font-weight: 500; color: var(--text-main); transition: color .12s; }
+.hist-dept  { font-size: 11px; color: var(--text-sub); margin-top: 2px; }
+
+/* ─── Metric Row ─────────────────────────────────────── */
+.metric-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+.metric-box { background: var(--gray-bg); border-radius: var(--radius-md); padding: 10px 8px; text-align: center; }
+.metric-val { font-size: 17px; font-weight: 600; color: var(--text-main); }
+.metric-lbl { font-size: 10px; color: var(--text-sub); margin-top: 2px; }
+
+/* ─── Modal (API Key input) ─────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.5);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000; padding: 16px; display: none;
+}
+.modal-overlay.open { display: flex; }
+.modal-box {
+  background: var(--white); border-radius: var(--radius-lg);
+  padding: 20px; width: 100%; max-width: 360px; box-shadow: var(--shadow);
+}
+.modal-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+.modal-desc  { font-size: 12px; color: var(--text-sub); margin-bottom: 14px; line-height: 1.55; }
+.modal-label { font-size: 12px; font-weight: 500; margin-bottom: 5px; display: block; }
+.modal-input {
+  width: 100%; padding: 9px 12px; border: 1px solid var(--gray-line);
+  border-radius: var(--radius-md); font-size: 13px; font-family: monospace;
+  color: var(--text-main); background: var(--white); margin-bottom: 12px;
+}
+.modal-input:focus { outline: none; border-color: var(--blue-mid); }
+.modal-footer { display: flex; gap: 8px; }
+.btn-sec {
+  flex: 1; padding: 10px; border: 1px solid var(--gray-line); border-radius: var(--radius-md);
+  background: var(--white); color: var(--text-sub); font-size: 13px;
+  cursor: pointer; font-family: var(--font);
+}
+.btn-sec:hover { background: var(--gray-bg); }
+.btn-save {
+  flex: 1; padding: 10px; background: var(--blue); color: #fff; border: none;
+  border-radius: var(--radius-md); font-size: 13px; font-weight: 500;
+  cursor: pointer; font-family: var(--font);
+}
+.btn-save:hover { background: var(--blue-dark); }
+
+/* ─── Empty ──────────────────────────────────────────── */
+.empty {
+  text-align: center; padding: 40px 20px;
+  color: var(--text-hint); font-size: 13px;
+}
+.empty svg { width: 40px; height: 40px; stroke: var(--gray-line); margin-bottom: 10px; }
+
+/* ─── Operation Weight Hint ──────────────────────────── */
+.op-hint-row {
+  display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap;
+}
+.op-hint-item {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border-radius: 20px; font-size: 11px;
+  font-weight: 500; flex-shrink: 0;
+}
+.op-hint-high { background: var(--green-bg); color: var(--green); }
+.op-hint-mid  { background: var(--amber-bg); color: var(--amber); }
+.op-hint-low  { background: var(--blue-light); color: var(--blue-dark); }
+.op-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.op-dot-high { background: var(--green); }
+.op-dot-mid  { background: var(--amber); }
+.op-dot-low  { background: var(--blue-mid); }
+.op-rw-label { font-size: 10px; font-weight: 600; margin-left: 2px; }
+.op-weight-tip {
+  margin: 7px 0 4px; padding: 9px 12px;
+  background: var(--green-bg); border-radius: var(--radius-md);
+  font-size: 11px; color: var(--green); line-height: 1.6;
+  border: 1px solid rgba(59,109,17,.2);
+}
+
+/* ─── Collapsible Dept Panel ─────────────────────────── */
+.dept-collapse {
+  margin-bottom: 12px;
+}
+.dept-collapse-toggle {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; background: var(--gray-bg); border: 1px solid var(--gray-line);
+  border-radius: var(--radius-md); cursor: pointer; font-family: var(--font);
+  font-size: 13px; font-weight: 500; color: var(--text-main);
+  transition: all .2s; -webkit-tap-highlight-color: transparent;
+}
+.dept-collapse-toggle:hover { border-color: var(--blue-mid); }
+.dept-collapse-toggle.open { border-radius: var(--radius-md) var(--radius-md) 0 0; border-bottom-color: transparent; background: var(--blue-light); color: var(--blue); }
+.dept-collapse-toggle .toggle-left { display: flex; align-items: center; gap: 8px; }
+.dept-collapse-toggle .toggle-left svg { width: 16px; height: 16px; stroke: var(--text-sub); flex-shrink: 0; }
+.dept-collapse-toggle.open .toggle-left svg { stroke: var(--blue); }
+.dept-collapse-toggle .selected-dept { font-size: 11px; color: var(--text-hint); font-weight: 400; margin-left: 4px; }
+.dept-collapse-toggle.open .selected-dept { color: var(--blue-mid); }
+.dept-collapse-toggle .chevron {
+  width: 18px; height: 18px; transition: transform .25s ease;
+  stroke: var(--text-hint); flex-shrink: 0;
+}
+.dept-collapse-toggle.open .chevron { transform: rotate(180deg); stroke: var(--blue); }
+.dept-collapse-body {
+  max-height: 0; overflow: hidden;
+  border: 1px solid var(--gray-line); border-top: none;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  transition: max-height .3s ease, padding .3s ease;
+  padding: 0 10px;
+}
+.dept-collapse-body.open {
+  max-height: 500px; padding: 10px;
+}
+
+/* ─── Scrollbar ──────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--gray-line); border-radius: 2px; }
+
+/* ─── Upload Button Halves ───────────────────────────── */
+.upload-btn-half {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 4px; padding: 12px 8px;
+  border: 1.5px dashed var(--blue-mid); border-radius: var(--radius-md);
+  background: var(--blue-light); cursor: pointer; font-family: var(--font);
+  transition: all .15s;
+}
+.upload-btn-half:hover  { background: var(--blue-light); border-color: var(--blue); }
+.upload-btn-half:active { transform: scale(.97); }
+.upload-btn-half svg    { stroke: var(--blue); }
+.upload-btn-half span   { font-size: 13px; font-weight: 500; color: var(--text-main); }
+.upload-btn-half small  { font-size: 10px; color: var(--text-sub); }
+.upload-btn-green {
+  border-color: rgba(59,109,17,.4); background: var(--green-bg);
+}
+.upload-btn-green svg  { stroke: var(--green); }
+.upload-btn-green:hover { border-color: var(--green); }
+
+/* ─── Op Image Preview ───────────────────────────────── */
+.op-img-preview { display: none; margin-bottom: 8px; position: relative; }
+.op-img-preview img { width: 100%; max-height: 140px; object-fit: contain; border-radius: var(--radius-md); border: 1px solid var(--gray-line); }
+.op-img-preview .del-btn {
+  position: absolute; top: 6px; right: 6px; width: 22px; height: 22px;
+  background: rgba(0,0,0,.5); border-radius: 50%; border: none; cursor: pointer;
+  color: #fff; font-size: 13px; display: flex; align-items: center; justify-content: center;
+}
+</style>
+</head>
+<body>
+
+<!-- ═══ APP SHELL ═══════════════════════════════════ -->
+<div class="app">
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+        <rect x="9" y="3" width="6" height="4" rx="1"/>
+        <path d="M9 12h6M9 16h4"/>
+      </svg>
+    </div>
+    <div>
+      <div class="header-title">DRG 诊断优化助手</div>
+      <div class="header-sub">CHS-DRG 2.0 · AI 智能分析 · 2025</div>
+    </div>
+    <div class="header-right">
+      <button class="api-btn" onclick="openModal()">API 密钥</button>
+    </div>
+  </header>
+
+  <!-- Tabs -->
+  <nav class="tabs">
+    <button class="tab-btn active" onclick="switchTab('analyze')">AI 分析</button>
+    <button class="tab-btn" onclick="switchTab('dept')">科室规则</button>
+    <button class="tab-btn" onclick="switchTab('drg')">DRG 基础</button>
+    <button class="tab-btn" onclick="switchTab('history')">历史</button>
+  </nav>
+
+  <!-- ══ Main ════════════════════════════════════════ -->
+  <main class="main">
+
+    <!-- ─── Panel: AI 分析 ─────────────────────────── -->
+    <div id="panel-analyze" class="panel active">
+
+      <!-- Dept selector (collapsible) -->
+      <div class="section-label">选择科室（影响专项规则）</div>
+      <div class="dept-collapse">
+        <button class="dept-collapse-toggle" onclick="toggleDeptPanel('analyze-dept')">
+          <span class="toggle-left">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l4-4 4 4"/><path d="M7 5v14"/><path d="M21 15l-4 4-4-4"/><path d="M17 19V5"/></svg>
+            <span>科室选择</span>
+            <span class="selected-dept" id="analyze-dept-label">当前：通用</span>
+          </span>
+          <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="dept-collapse-body" id="analyze-dept-body">
+          <div class="dept-row">
+            <button class="dept-chip active" data-dept="通用" onclick="selectDept(this)">通用</button>
+            <button class="dept-chip" data-dept="骨科" onclick="selectDept(this)">骨科</button>
+            <button class="dept-chip" data-dept="肿瘤科" onclick="selectDept(this)">肿瘤科</button>
+            <button class="dept-chip" data-dept="心内科" onclick="selectDept(this)">心内科</button>
+            <button class="dept-chip" data-dept="心外科" onclick="selectDept(this)">心外科</button>
+            <button class="dept-chip" data-dept="神经内科" onclick="selectDept(this)">神经内科</button>
+            <button class="dept-chip" data-dept="神经外科" onclick="selectDept(this)">神经外科</button>
+            <button class="dept-chip" data-dept="呼吸科" onclick="selectDept(this)">呼吸科</button>
+            <button class="dept-chip" data-dept="消化内科" onclick="selectDept(this)">消化内科</button>
+            <button class="dept-chip" data-dept="普外科" onclick="selectDept(this)">普外科</button>
+            <button class="dept-chip" data-dept="胸外科" onclick="selectDept(this)">胸外科</button>
+            <button class="dept-chip" data-dept="血管外科" onclick="selectDept(this)">血管外科</button>
+            <button class="dept-chip" data-dept="泌尿外科" onclick="selectDept(this)">泌尿外科</button>
+            <button class="dept-chip" data-dept="妇科" onclick="selectDept(this)">妇科</button>
+            <button class="dept-chip" data-dept="产科" onclick="selectDept(this)">产科</button>
+            <button class="dept-chip" data-dept="儿科" onclick="selectDept(this)">儿科</button>
+            <button class="dept-chip" data-dept="内分泌科" onclick="selectDept(this)">内分泌科</button>
+            <button class="dept-chip" data-dept="肾内科" onclick="selectDept(this)">肾内科</button>
+            <button class="dept-chip" data-dept="血液科" onclick="selectDept(this)">血液科</button>
+            <button class="dept-chip" data-dept="风湿免疫科" onclick="selectDept(this)">风湿免疫</button>
+            <button class="dept-chip" data-dept="感染科" onclick="selectDept(this)">感染科</button>
+            <button class="dept-chip" data-dept="急诊科" onclick="selectDept(this)">急诊科</button>
+            <button class="dept-chip" data-dept="重症医学科" onclick="selectDept(this)">重症医学</button>
+            <button class="dept-chip" data-dept="眼科" onclick="selectDept(this)">眼科</button>
+            <button class="dept-chip" data-dept="耳鼻喉科" onclick="selectDept(this)">耳鼻喉科</button>
+            <button class="dept-chip" data-dept="精神科" onclick="selectDept(this)">精神科</button>
+            <button class="dept-chip" data-dept="康复科" onclick="selectDept(this)">康复科</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Upload -->
+      <div class="section-label">上传 / 拍摄出院诊断</div>
+      <!-- Hidden inputs: one for camera, one for album -->
+      <input type="file" id="file-input-camera" accept="image/*" capture="environment" onchange="handleFile(event)" style="display:none">
+      <input type="file" id="file-input-album"  accept="image/*" onchange="handleFile(event)" style="display:none">
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <button class="upload-btn-half" onclick="document.getElementById('file-input-camera').click()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+          <span>📷 拍照</span>
+          <small>直接调起相机</small>
+        </button>
+        <button class="upload-btn-half" onclick="document.getElementById('file-input-album').click()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+            <polyline points="21 15 16 10 5 21"/>
+          </svg>
+          <span>🖼️ 相册</span>
+          <small>从相册选图</small>
+        </button>
+      </div>
+      <p style="font-size:11px;color:var(--text-hint);margin:-8px 0 10px;text-align:center;">支持病案首页、出院小结、手写诊断单</p>
+
+      <!-- Image preview -->
+      <div class="img-preview" id="img-preview">
+        <img id="preview-img" src="" alt="预览图">
+        <button class="del-btn" onclick="clearImage()">✕</button>
+      </div>
+
+      <!-- Manual input (right after photo upload) -->
+      <div class="or-divider">或手动输入诊断（无图片时）</div>
+      <textarea id="manual-input"
+        placeholder="每行输入一个诊断，例如：&#10;冠状动脉粥样硬化性心脏病&#10;急性前壁心肌梗死&#10;高血压病3级（极高危）&#10;2型糖尿病&#10;心功能不全（NYHA Ⅱ级）"></textarea>
+
+      <!-- Operation input -->
+      <div class="section-label" style="margin-top:14px;">手术 / 操作列表（对权重影响最大）</div>
+      <div class="op-hint-row">
+        <div class="op-hint-item op-hint-high">
+          <span class="op-dot op-dot-high"></span>
+          <span>手术操作</span>
+          <span class="op-rw-label">权重 ×3~10</span>
+        </div>
+        <div class="op-hint-item op-hint-mid">
+          <span class="op-dot op-dot-mid"></span>
+          <span>介入/内镜</span>
+          <span class="op-rw-label">权重 ×1.5~4</span>
+        </div>
+        <div class="op-hint-item op-hint-low">
+          <span class="op-dot op-dot-low"></span>
+          <span>诊断性操作</span>
+          <span class="op-rw-label">权重 ×1~1.5</span>
+        </div>
+      </div>
+      <!-- Operation image upload: camera + album buttons -->
+      <input type="file" id="op-file-input-camera" accept="image/*" capture="environment" onchange="handleOpFile(event)" style="display:none">
+      <input type="file" id="op-file-input-album"  accept="image/*" onchange="handleOpFile(event)" style="display:none">
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <button class="upload-btn-half upload-btn-green" onclick="document.getElementById('op-file-input-camera').click()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+          <span>📷 拍照</span>
+          <small>拍手术记录单</small>
+        </button>
+        <button class="upload-btn-half upload-btn-green" onclick="document.getElementById('op-file-input-album').click()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+            <polyline points="21 15 16 10 5 21"/>
+          </svg>
+          <span>🖼️ 相册</span>
+          <small>选操作单截图</small>
+        </button>
+      </div>
+      <div class="op-img-preview" id="op-img-preview">
+        <img id="op-preview-img" src="" alt="手术操作预览">
+        <button class="del-btn" onclick="clearOpImage()">✕</button>
+      </div>
+      <div class="or-divider" style="margin:6px 0 8px;">或手动输入</div>
+      <textarea id="operation-input" placeholder="每行输入一项手术或操作，例如：&#10;经皮冠状动脉介入治疗（PCI）&#10;冠状动脉造影&#10;临时起搏器植入&#10;&#10;留空则代表保守治疗（内科组，权重较低）" style="min-height:80px;"></textarea>
+      <div class="op-weight-tip">
+        💡 <strong>手术操作是DRG权重最核心的决定因素：</strong>同一主诊断，有无手术操作权重可相差 2~8 倍；手术级别越高、操作越复杂，权重越高。
+      </div>
+
+      <!-- Analyze button -->
+      <button class="btn-primary" id="analyze-btn" onclick="startAnalysis()" style="margin-top:12px;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        AI 分析并优化排序
+      </button>
+
+      <!-- Loading -->
+      <div class="loading-wrap" id="loading-wrap">
+        <div class="loading-track"><div class="loading-fill" id="loading-fill"></div></div>
+        <div class="loading-msg" id="loading-msg">正在识别...</div>
+      </div>
+
+      <!-- Result area -->
+      <div id="result-area" style="margin-top:4px;"></div>
+    </div>
+
+    <!-- ─── Panel: 科室规则 ────────────────────────── -->
+    <div id="panel-dept" class="panel">
+
+      <div class="section-label">选择科室查看专项规则</div>
+      <div class="dept-collapse">
+        <button class="dept-collapse-toggle open" onclick="toggleDeptPanel('rule-dept')">
+          <span class="toggle-left">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            <span>科室列表</span>
+            <span class="selected-dept" id="rule-dept-label">当前：骨科</span>
+          </span>
+          <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="dept-collapse-body open" id="rule-dept-body">
+          <div class="dept-row" style="margin-bottom:0;">
+            <button class="dept-chip active" onclick="showDeptRule(this,'bone')">骨科</button>
+            <button class="dept-chip" onclick="showDeptRule(this,'tumor')">肿瘤科</button>
+            <button class="dept-chip" onclick="showDeptRule(this,'cardio')">心内科</button>
+            <button class="dept-chip" onclick="showDeptRule(this,'cardiac-surg')">心外科</button>
+            <button class="dept-chip" onclick="showDeptRule(this,'neuro')">神经内科</button>
+            <button class="dept-chip" onclick="showDeptRule(this,'neuro-surg')">神经外科</button>
+            <button class="dept-chip" onclick="showDeptRule(this,'resp')">呼吸科</button>
+            <button class="dept-chip" onclick="showDeptRule(this,'gi')">消化内科</button>
+            <button class="dept-chip" onclick="showDeptRule(this,'gen-surg')">普外科</button>
+            <button class="dept-chip" onclick="showDeptRule(this,'thoracic')">胸外科</button>
+            <button class="dept-chip" onclick="showDeptRule(this,'vascular')">血管外科</button>
+            <button class="dept-chip" onclick="showDeptRule(this,'urology')">泌尿外科</button>
+            <button class="dept-chip" onclick="showDeptRule(this,'gyn')">妇科</button>
+            <button class="dept-chip" onclick="showDeptRule(this,'ob')">产科</button>
+            <button class="dept-chip" onclick="showDeptRule(this,'peds')">儿科</button>
+            <button class="dept-chip" onclick="showDeptRule(this,'endo')">内分泌科</button>
+            <button class="dept-chip" onclick="showDeptRule(this,'nephro')">肾内科</button>
+            <button class="dept-chip" onclick="showDeptRule(this,'hema')">血液科</button>
+            <button class="dept-chip" onclick="showDeptRule(this,'rheum')">风湿免疫</button>
+            <button class="dept-chip" onclick="showDeptRule(this,'infect')">感染科</button>
+            <button class="dept-chip" onclick="showDeptRule(this,'icu')">重症医学</button>
+            <button class="dept-chip" onclick="showDeptRule(this,'ophthal')">眼科</button>
+            <button class="dept-chip" onclick="showDeptRule(this,'ent')">耳鼻喉科</button>
+            <button class="dept-chip" onclick="showDeptRule(this,'psych')">精神科</button>
+            <button class="dept-chip" onclick="showDeptRule(this,'rehab')">康复科</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 骨科 -->
+      <div id="dept-bone" class="dept-rules-wrap active">
+        <div class="alert" style="margin-bottom:12px;"><strong>骨科DRG核心提示：</strong>主要诊断决定进入I系列（肌肉骨骼系统）还是B系列（神经系统），影响权重差异可达数倍。</div>
+        <div class="card">
+          <div class="card-header"><h3>主诊选择关键规则</h3></div>
+          <div class="rule-item"><div class="rule-title">多部位损伤 → 选危害最重部位</div><div class="rule-desc">如骨折合并神经损伤，应以神经损伤为主诊（B系列权重通常 &gt; I系列），但需确有神经科诊疗证据。</div></div>
+          <div class="rule-item"><div class="rule-title">脊柱手术 → 区分颈/胸/腰段</div><div class="rule-desc">颈椎前路/后路手术分组不同，编码需精确到手术入路，避免笼统编"脊柱手术"导致低权重组。</div></div>
+          <div class="rule-item"><div class="rule-title">关节置换 → 明确单/双侧、初次/翻修</div><div class="rule-desc">髋膝关节翻修（revision）权重显著高于初次置换，必须如实标注；双侧置换同次住院应标注双侧。</div></div>
+          <div class="rule-item"><div class="rule-title">合并症加权：骨科高权重MCC/CC</div><div class="rule-desc">术后深静脉血栓（DVT）、肺栓塞、伤口感染、脂肪栓塞、ARDS等属MCC/CC，需如实记录并有治疗措施。</div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>常见骨科高权重病组示例</h3></div>
+          <div class="rule-item"><div class="rule-title">脊柱融合术（多节段）</div><div class="rule-desc">ADRG: IB1x，伴MCC权重 &gt; 5.0，需记录节段数及内固定情况。</div></div>
+          <div class="rule-item"><div class="rule-title">髋关节翻修</div><div class="rule-desc">翻修手术权重约为初次置换1.5~2倍，须有明确翻修指征记录。</div></div>
+          <div class="rule-item"><div class="rule-title">复杂骨盆骨折</div><div class="rule-desc">合并血管损伤或腹腔脏器损伤时，主诊可考虑血管损伤（T系列），需多科会诊记录。</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：骨科是医保稽核重点科室。不得仅凭骨折加上神经损伤编码而无神经科相关检查或治疗记录，否则属高套违规。</div>
+      </div>
+
+      <!-- 肿瘤科 -->
+      <div id="dept-tumor" class="dept-rules-wrap">
+        <div class="alert" style="margin-bottom:12px;"><strong>肿瘤科DRG核心提示：</strong>住院目的不同，主诊断选择规则完全不同——手术、放疗、化疗、支持治疗各有专属原则。</div>
+        <div class="card">
+          <div class="card-header"><h3>肿瘤主诊断选择四大场景</h3></div>
+          <div class="rule-item"><div class="rule-title"><span class="inline-tag" style="background:var(--blue-light);color:var(--blue-dark);">场景1</span> 手术切除为主要目的</div><div class="rule-desc">主诊选恶性肿瘤本身（如胃恶性肿瘤 C16），并记录具体手术方式（根治/姑息切除）。</div></div>
+          <div class="rule-item"><div class="rule-title"><span class="inline-tag" style="background:var(--green-bg);color:var(--green);">场景2</span> 单纯化疗/靶向治疗</div><div class="rule-desc">主诊选"恶性肿瘤化学治疗"（Z51.1），原发肿瘤作为其他诊断。</div></div>
+          <div class="rule-item"><div class="rule-title"><span class="inline-tag" style="background:var(--amber-bg);color:var(--amber);">场景3</span> 单纯放疗</div><div class="rule-desc">主诊选"恶性肿瘤放射治疗"（Z51.0），与化疗同次住院时以消耗资源多者为主诊。</div></div>
+          <div class="rule-item"><div class="rule-title"><span class="inline-tag" style="background:var(--red-bg);color:var(--red);">场景4</span> 并发症/急症处理</div><div class="rule-desc">因并发症（如肠梗阻、上消化道出血）入院，主诊选并发症；原发肿瘤为其他诊断。可显著提升权重。</div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>肿瘤科高权重MCC/CC</h3></div>
+          <div class="rule-item"><div class="rule-desc">恶性胸腔积液、恶性腹腔积液（须有穿刺引流记录）</div></div>
+          <div class="rule-item"><div class="rule-desc">化疗后Ⅳ度骨髓抑制（须有血常规结果 + 治疗记录）</div></div>
+          <div class="rule-item"><div class="rule-desc">肿瘤溶解综合征、弥漫性血管内凝血（DIC）</div></div>
+          <div class="rule-item"><div class="rule-desc">脓毒血症/感染性休克（须有培养结果或影像支持）</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：不得在所有化疗患者中统一加注"恶心呕吐"诊断。须有相应治疗记录方可作为CC填报。</div>
+      </div>
+
+      <!-- 心内科 -->
+      <div id="dept-cardio" class="dept-rules-wrap">
+        <div class="alert" style="margin-bottom:12px;"><strong>心内科DRG核心提示：</strong>介入手术类型（PCI、起搏器植入、射频消融等）直接决定ADRG分组，比内科诊断权重高2~5倍。</div>
+        <div class="card">
+          <div class="card-header"><h3>心内科主诊选择规则</h3></div>
+          <div class="rule-item"><div class="rule-title">急性心肌梗死 → 明确部位与类型</div><div class="rule-desc">前壁/下壁/侧壁STEMI、NSTEMI编码不同，影响ADRG分配。有PCI手术时主诊仍选AMI，手术操作填PCI。</div></div>
+          <div class="rule-item"><div class="rule-title">心衰 → 明确NYHA分级 + 类型</div><div class="rule-desc">收缩性（HFrEF）/舒张性（HFpEF）心衰编码不同；NYHA Ⅲ-Ⅳ级属MCC。</div></div>
+          <div class="rule-item"><div class="rule-title">介入手术类型须精确</div><div class="rule-desc">单支/多支血管PCI、DES/BMS支架、CTO病变PCI等细分，多支血管病变权重更高，须有影像报告支持。</div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>心内科高权重MCC/CC</h3></div>
+          <div class="rule-item"><div class="rule-desc">心源性休克（须有血压/血流动力学记录 + 升压药使用）</div></div>
+          <div class="rule-item"><div class="rule-desc">完全性房室传导阻滞（须有心电图记录）</div></div>
+          <div class="rule-item"><div class="rule-desc">急性肾衰竭（Cr升高 + 少尿，须记录透析或利尿治疗）</div></div>
+          <div class="rule-item"><div class="rule-desc">恶性心律失常：室颤/室速需电复律（须有除颤记录）</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：心衰NYHA分级须与病程记录一致；PCI支架数量须与手术记录及耗材使用台账一致。</div>
+      </div>
+
+      <!-- 心外科 -->
+      <div id="dept-cardiac-surg" class="dept-rules-wrap">
+        <div class="alert" style="margin-bottom:12px;"><strong>心外科DRG核心提示：</strong>手术类型和是否体外循环是分组关键，搭桥血管数目、瓣膜置换/成形方式须精确记录。</div>
+        <div class="card">
+          <div class="card-header"><h3>心外科主诊及手术规则</h3></div>
+          <div class="rule-item"><div class="rule-title">CABG → 明确体外循环/非体外循环、桥血管数目</div><div class="rule-desc">体外循环CABG权重高于非体外，多支搭桥权重更高；搭桥数目须与手术记录一致。</div></div>
+          <div class="rule-item"><div class="rule-title">瓣膜手术 → 区分置换/成形、单瓣/多瓣、生物瓣/机械瓣</div><div class="rule-desc">双瓣置换权重远高于单瓣，合并CABG的联合手术属最高权重组，须有超声心动图支持。</div></div>
+          <div class="rule-item"><div class="rule-title">主动脉手术 → 区分根部/升主动脉/弓部，全弓替换+支架象鼻（孙氏手术）权重极高</div><div class="rule-desc">须完整记录体外循环时间和深低温停循环时长。</div></div>
+        </div>
+        <div class="card"><div class="card-header"><h3>高权重MCC/CC</h3></div>
+          <div class="rule-item"><div class="rule-desc">术后低心排综合征（须IABP/ECMO辅助记录）</div></div>
+          <div class="rule-item"><div class="rule-desc">体外循环后急性肾功能衰竭需CRRT</div></div>
+          <div class="rule-item"><div class="rule-desc">术后严重心律失常需电复律或再次手术</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：体外循环时间、停循环时间、搭桥数目须与麻醉单、手术护理记录三方一致。</div>
+      </div>
+
+      <!-- 神经内科 -->
+      <div id="dept-neuro" class="dept-rules-wrap">
+        <div class="alert" style="margin-bottom:12px;"><strong>神经内科DRG核心提示：</strong>脑卒中类型、部位和是否介入治疗是分组关键，溶栓/取栓操作权重远高于内科保守治疗。</div>
+        <div class="card">
+          <div class="card-header"><h3>神经内科主诊规则</h3></div>
+          <div class="rule-item"><div class="rule-title">脑梗死 → 区分部位（前循环/后循环）和病因（TOAST分型）</div><div class="rule-desc">大动脉粥样硬化型/心源性/小血管病型编码不同；静脉溶栓（tPA）和血管内取栓为高权重操作，须有时间窗记录。</div></div>
+          <div class="rule-item"><div class="rule-title">脑出血 → 区分硬膜下/硬膜外/蛛网膜下腔/脑实质出血</div><div class="rule-desc">动脉瘤破裂SAH须有CTA/DSA证据；外科手术（开颅/介入栓塞）权重远高于保守。</div></div>
+          <div class="rule-item"><div class="rule-title">癫痫持续状态 → 区分惊厥性/非惊厥性，脑电图监测记录必须完整</div><div class="rule-desc">难治性癫痫持续状态须有ICU记录和多线治疗依据。</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：溶栓治疗须有发病到用药时间记录（时间窗内），且与护理记录一致；取栓手术须有术前CTA/MRA证据。</div>
+      </div>
+
+      <!-- 神经外科 -->
+      <div id="dept-neuro-surg" class="dept-rules-wrap">
+        <div class="alert" style="margin-bottom:12px;"><strong>神经外科DRG核心提示：</strong>开颅手术与内镜/介入操作分属不同ADRG，手术入路和肿瘤良恶性影响权重显著。</div>
+        <div class="card">
+          <div class="card-header"><h3>神经外科主诊及手术规则</h3></div>
+          <div class="rule-item"><div class="rule-title">颅内肿瘤 → 区分良性/恶性、部位、手术切除程度</div><div class="rule-desc">全切/次全切/活检权重不同；立体定向活检单独编码；恶性肿瘤权重高于良性同部位。</div></div>
+          <div class="rule-item"><div class="rule-title">脑出血/颅内血肿 → 区分高血压性/外伤性/动脉瘤性，手术/保守分组</div><div class="rule-desc">动脉瘤夹闭或介入栓塞权重远高于保守；外伤性开颅清除血肿须区分硬膜下/外/脑内。</div></div>
+          <div class="rule-item"><div class="rule-title">脊柱脊髓手术 → 神经外科主诊通常为脊髓/神经根压迫（G系列）</div><div class="rule-desc">与骨科骨折分组不同，权重可更高。须有神经损害的影像和查体依据。</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：颅内肿瘤切除须有术后病理报告支持良恶性诊断；手术切除程度须与影像学（MRI）结论一致。</div>
+      </div>
+
+      <!-- 呼吸科 -->
+      <div id="dept-resp" class="dept-rules-wrap">
+        <div class="alert" style="margin-bottom:12px;"><strong>呼吸科DRG核心提示：</strong>呼吸衰竭分型和通气方式是分组关键，有创通气属MCC最高权重项。</div>
+        <div class="card">
+          <div class="card-header"><h3>呼吸科主诊规则</h3></div>
+          <div class="rule-item"><div class="rule-title">肺炎 → 区分细菌性/病毒性/真菌性，有病原学结果时使用合并编码</div><div class="rule-desc">重症肺炎（需呼吸支持）权重显著高于普通肺炎；须有病原学检查记录。</div></div>
+          <div class="rule-item"><div class="rule-title">COPD急性加重 → 标注严重程度（GOLD分级）和触发因素</div><div class="rule-desc">合并Ⅱ型呼吸衰竭属MCC；无创/有创通气须有血气分析和通气参数记录。</div></div>
+          <div class="rule-item"><div class="rule-title">呼吸衰竭 → 须区分Ⅰ型（低氧）/Ⅱ型（高碳酸），有创通气为MCC</div><div class="rule-desc">有创机械通气&gt;96小时属极高MCC；间质性肺病急性加重须有HRCT依据。</div></div>
+          <div class="rule-item"><div class="rule-title">肺栓塞 → 区分大面积/次大面积/低危，溶栓治疗为高权重操作</div><div class="rule-desc">大面积肺栓塞须有心脏超声RV/LV比和休克记录；溶栓须有禁忌证评估记录。</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：有创通气使用时长须与护理记录和麻醉/重症医学记录完全一致，不得虚报天数。</div>
+      </div>
+
+      <!-- 消化内科 -->
+      <div id="dept-gi" class="dept-rules-wrap">
+        <div class="alert" style="margin-bottom:12px;"><strong>消化内科DRG核心提示：</strong>内镜操作类型是分组关键，治疗性内镜权重远高于诊断性；消化道出血须明确来源和严重程度。</div>
+        <div class="card">
+          <div class="card-header"><h3>消化内科主诊及操作规则</h3></div>
+          <div class="rule-item"><div class="rule-title">消化道出血 → 明确部位（上/下消化道）、出血量及止血方式</div><div class="rule-desc">内镜止血（套扎/硬化/钛夹）比保守治疗权重高；需输血者须记录输血量及血红蛋白值。</div></div>
+          <div class="rule-item"><div class="rule-title">ERCP → 区分诊断性/治疗性（取石/引流/括约肌切开）</div><div class="rule-desc">治疗性ERCP权重约为诊断性2倍，取石数目和操作难度须在操作记录中体现。</div></div>
+          <div class="rule-item"><div class="rule-title">肝硬化 → 必须标注合并症（腹水/食管胃底静脉曲张/肝性脑病/肝肾综合征）</div><div class="rule-desc">Child-Pugh C级属MCC；肝性脑病（II级以上）属MCC；门静脉高压TIPS为高权重操作。</div></div>
+          <div class="rule-item"><div class="rule-title">急性重症胰腺炎 → 须有CT严重度指数（CTSI评分）和器官衰竭记录</div><div class="rule-desc">合并感染性坏死须有穿刺引流或外科干预记录，属极高权重组。</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：ERCP操作并发症（急性胰腺炎）须有血淀粉酶结果和治疗记录，不得预防性填写。</div>
+      </div>
+
+      <!-- 普外科 -->
+      <div id="dept-gen-surg" class="dept-rules-wrap">
+        <div class="alert" style="margin-bottom:12px;"><strong>普外科DRG核心提示：</strong>手术方式（开腹/腹腔镜/机器人）和恶性肿瘤根治程度直接影响分组；急诊手术与择期手术权重有差异。</div>
+        <div class="card">
+          <div class="card-header"><h3>普外科主诊及手术规则</h3></div>
+          <div class="rule-item"><div class="rule-title">胃肠肿瘤手术 → 区分根治切除/姑息切除，明确淋巴结清扫范围</div><div class="rule-desc">D2根治术须有清扫数目记录；联合脏器切除（如胰体尾+脾）权重显著更高。</div></div>
+          <div class="rule-item"><div class="rule-title">胰十二指肠切除术（Whipple）→ 属极高权重组</div><div class="rule-desc">须明确是经典Whipple还是保留幽门术式；合并血管重建权重更高。</div></div>
+          <div class="rule-item"><div class="rule-title">急腹症 → 穿孔/绞窄/肠梗阻须如实记录，影响MDC分配</div><div class="rule-desc">阑尾炎穿孔腹膜炎权重远高于单纯阑尾炎；腹腔镜手术中转开腹须按实际完成术式编码。</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：腹腔镜手术中转开腹须在手术记录中注明，编码应按实际完成的手术方式填写。</div>
+      </div>
+
+      <!-- 胸外科 -->
+      <div id="dept-thoracic" class="dept-rules-wrap">
+        <div class="alert" style="margin-bottom:12px;"><strong>胸外科DRG核心提示：</strong>肺癌手术切除范围（楔形/肺叶/全肺）和手术方式（VATS/开胸/机器人）影响权重。</div>
+        <div class="card">
+          <div class="card-header"><h3>胸外科主诊及手术规则</h3></div>
+          <div class="rule-item"><div class="rule-title">肺癌手术 → 区分楔形切除/肺段切除/肺叶切除/全肺切除，明确淋巴结清扫</div><div class="rule-desc">肺叶切除+纵隔淋巴结清扫（根治术）权重最高；VATS/机器人辅助须单独编码。</div></div>
+          <div class="rule-item"><div class="rule-title">食管癌手术 → 区分颈/胸/腹三切口，管状胃成形，重建方式</div><div class="rule-desc">McKeown术式（三切口）权重最高；术后吻合口瘘须有消化道造影或内镜记录，属MCC。</div></div>
+          <div class="rule-item"><div class="rule-title">纵隔肿瘤/胸腺瘤 → 须有病理分型（WHO分型）和Masaoka分期</div><div class="rule-desc">合并重症肌无力须有AchR抗体和肌电图记录；胸腺癌与胸腺瘤编码不同，权重差异大。</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：肺切除范围须与术后胸部CT和病理报告一致；淋巴结清扫数目须与病理报告相符。</div>
+      </div>
+
+      <!-- 血管外科 -->
+      <div id="dept-vascular" class="dept-rules-wrap">
+        <div class="alert" style="margin-bottom:12px;"><strong>血管外科DRG核心提示：</strong>腔内手术与开放手术分属不同ADRG，主动脉手术须区分解剖位置和腔内/开放方式。</div>
+        <div class="card">
+          <div class="card-header"><h3>血管外科主诊及手术规则</h3></div>
+          <div class="rule-item"><div class="rule-title">主动脉瘤 → 区分EVAR（腔内修复）/开放手术，胸/腹主动脉瘤须区分</div><div class="rule-desc">破裂主动脉瘤急诊手术为最高权重组；须有人工血管记录。</div></div>
+          <div class="rule-item"><div class="rule-title">下肢动脉闭塞 → 区分腔内治疗（PTA/支架）/搭桥手术/截肢</div><div class="rule-desc">股腘动脉旁路移植权重高于PTA；膝下截肢须记录术前坏死/感染范围，有无血运重建。</div></div>
+          <div class="rule-item"><div class="rule-title">深静脉血栓/肺栓塞 → 区分导管溶栓/机械取栓/下腔静脉滤器/系统溶栓</div><div class="rule-desc">导管接触性溶栓（CDT）权重高于系统溶栓；大面积肺栓塞须有心脏超声RV/LV比和休克记录。</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：腔内器材（支架型血管/支架）规格须与耗材使用台账一致；截肢须有充分的不可逆缺血依据记录。</div>
+      </div>
+
+      <!-- 泌尿外科 -->
+      <div id="dept-urology" class="dept-rules-wrap">
+        <div class="alert" style="margin-bottom:12px;"><strong>泌尿外科DRG核心提示：</strong>肿瘤根治手术与腔内手术分属不同高权重组，结石手术须区分微创方式。</div>
+        <div class="card">
+          <div class="card-header"><h3>泌尿外科主诊及手术规则</h3></div>
+          <div class="rule-item"><div class="rule-title">前列腺癌 → 区分根治性前列腺切除（开放/腹腔镜/机器人辅助）与内分泌治疗入院</div><div class="rule-desc">机器人辅助根治性切除术须单独编码，权重高于腹腔镜；内分泌治疗入院以Z51系列为主诊。</div></div>
+          <div class="rule-item"><div class="rule-title">肾癌 → 区分根治性肾切除/保留肾单位手术（肾部分切除）</div><div class="rule-desc">肾部分切除保肾手术权重与根治相近，须注明肿瘤大小和切缘情况。</div></div>
+          <div class="rule-item"><div class="rule-title">尿路结石 → 区分ESWL/输尿管镜碎石取石/PCNL（经皮肾镜）</div><div class="rule-desc">PCNL权重最高，须有结石大小、位置和手术时间记录。</div></div>
+          <div class="rule-item"><div class="rule-title">膀胱癌 → 区分TURBT（经尿道切除）与根治性膀胱切除+尿流改道</div><div class="rule-desc">根治性膀胱切除+原位新膀胱术为极高权重，须记录淋巴结清扫情况。</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：腔内手术须与术前影像（CTU/IVU/KUB）结果一致；结石大小、位置须与手术记录相符。</div>
+      </div>
+
+      <!-- 妇科 -->
+      <div id="dept-gyn" class="dept-rules-wrap">
+        <div class="alert" style="margin-bottom:12px;"><strong>妇科DRG核心提示：</strong>恶性肿瘤根治手术与良性疾病手术权重差异大；腹腔镜/开腹/宫腔镜/机器人须分别编码。</div>
+        <div class="card">
+          <div class="card-header"><h3>妇科主诊及手术规则</h3></div>
+          <div class="rule-item"><div class="rule-title">宫颈癌/子宫内膜癌/卵巢癌 → 区分手术分期、根治程度、有无淋巴结清扫</div><div class="rule-desc">广泛性子宫切除+盆腔淋巴结清扫（根治术）权重最高；同期肠切除/膀胱切除需记录联合手术。</div></div>
+          <div class="rule-item"><div class="rule-title">子宫肌瘤/腺肌症 → 区分肌瘤切除/子宫切除（全切/次全切）、有无附件切除</div><div class="rule-desc">腹腔镜子宫次全切除与全切除编码不同；子宫重量须在手术记录中注明。</div></div>
+          <div class="rule-item"><div class="rule-title">宫腔镜手术 → 区分诊断性/治疗性</div><div class="rule-desc">宫腔镜下宫腔粘连重度分离权重高，须有宫腔镜评分（AFS分级）记录。</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：妇科恶性肿瘤手术须有术前肿瘤标志物、术中冷冻切片及术后石蜡病理支持分期诊断。</div>
+      </div>
+
+      <!-- 产科 -->
+      <div id="dept-ob" class="dept-rules-wrap">
+        <div class="alert" style="margin-bottom:12px;"><strong>产科DRG核心提示：</strong>分娩方式（阴道分娩/剖宫产）是分组主轴，合并症和新生儿情况影响权重。</div>
+        <div class="card">
+          <div class="card-header"><h3>产科主诊及分娩规则</h3></div>
+          <div class="rule-item"><div class="rule-title">分娩方式须精确记录：自然分娩/助产（产钳/胎吸）/择期剖宫产/急诊剖宫产</div><div class="rule-desc">急诊剖宫产权重高于择期；合并前置胎盘、胎盘植入剖宫产为高权重，须有超声依据。</div></div>
+          <div class="rule-item"><div class="rule-title">妊娠合并症 → 子痫前期/子痫须标注重度，妊娠期糖尿病须区分GDM/糖尿病合并妊娠</div><div class="rule-desc">重度子痫前期（收缩压≥160mmHg或有器官损伤）属MCC；子痫发作须有发作记录。</div></div>
+          <div class="rule-item"><div class="rule-title">产后并发症 → 产后出血须记录出血量（≥500ml），处理措施须完整</div><div class="rule-desc">需子宫切除止血的产后出血为极高权重；DIC须有凝血功能检查结果支持。</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：剖宫产指征须在病历中有明确记录（与手术同意书一致），无指征剖宫产属不合规手术。</div>
+      </div>
+
+      <!-- 儿科 -->
+      <div id="dept-peds" class="dept-rules-wrap">
+        <div class="alert" style="margin-bottom:12px;"><strong>儿科DRG核心提示：</strong>年龄（新生儿/婴幼儿/儿童）是分组重要因素，新生儿疾病独立进入P-MDC系列，权重普遍偏高。</div>
+        <div class="card">
+          <div class="card-header"><h3>儿科主诊及年龄分组规则</h3></div>
+          <div class="rule-item"><div class="rule-title">新生儿疾病 → 独立进入P系列，须明确胎龄（早产/足月）</div><div class="rule-desc">极低体重儿（&lt;1500g）和超低体重儿（&lt;1000g）权重极高；呼吸窘迫综合征须有肺表面活性物质治疗记录。</div></div>
+          <div class="rule-item"><div class="rule-title">小儿肺炎 → 区分病原体（细菌/病毒/支原体）和严重程度</div><div class="rule-desc">重症肺炎（需呼吸支持）属MCC；合并心衰、脓胸须有相应检查治疗记录。</div></div>
+          <div class="rule-item"><div class="rule-title">先天性心脏病手术 → 极高权重，须区分手术类型（根治/姑息/分期）</div><div class="rule-desc">体外循环下根治手术权重最高；Fontan/Norwood手术须完整记录血流动力学数据。</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：儿科患者年龄（出生日期）须与病历首页准确一致，新生儿须精确到天数，影响分组。</div>
+      </div>
+
+      <!-- 内分泌科 -->
+      <div id="dept-endo" class="dept-rules-wrap">
+        <div class="alert" style="margin-bottom:12px;"><strong>内分泌科DRG核心提示：</strong>糖尿病合并症是分组核心，须精确标注急性并发症类型和严重程度。</div>
+        <div class="card">
+          <div class="card-header"><h3>内分泌科主诊规则</h3></div>
+          <div class="rule-item"><div class="rule-title">糖尿病急性并发症 → DKA/HHS须区分，明确有无昏迷</div><div class="rule-desc">糖尿病酮症酸中毒（DKA）伴昏迷权重远高于不伴昏迷；HHS须有血糖、血酮、渗透压记录。</div></div>
+          <div class="rule-item"><div class="rule-title">糖尿病慢性并发症 → 须精确标注类型和分期</div><div class="rule-desc">糖尿病肾病IV期以上属高权重CC；糖尿病足须标注Wagner分级，III级以上为MCC，须有血管评估和清创记录。</div></div>
+          <div class="rule-item"><div class="rule-title">甲状腺危象 → 须有Burch-Wartofsky评分≥45分和ICU记录</div><div class="rule-desc">甲状腺危象属MCC，须有ICU监护或多脏器支持记录方可填报。</div></div>
+          <div class="rule-item"><div class="rule-title">垂体腺瘤/肾上腺肿瘤 → 手术（经鼻蝶/腹腔镜肾上腺切除）权重远高于保守</div><div class="rule-desc">库欣综合征合并高血压/糖尿病/骨质疏松属高权重CC组合；须有激素分泌过多的实验室依据。</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：糖尿病分型（1型/2型）须有依据；并发症分期须与检验结果（HbA1c、尿蛋白定量、眼底检查）一致。</div>
+      </div>
+
+      <!-- 肾内科 -->
+      <div id="dept-nephro" class="dept-rules-wrap">
+        <div class="alert" style="margin-bottom:12px;"><strong>肾内科DRG核心提示：</strong>透析操作类型和CKD分期是分组关键；肾穿刺活检和急性肾损伤严重程度须精确记录。</div>
+        <div class="card">
+          <div class="card-header"><h3>肾内科主诊及操作规则</h3></div>
+          <div class="rule-item"><div class="rule-title">AKI → 须标注KDIGO分期（1/2/3期）和病因</div><div class="rule-desc">AKI 3期（无尿 + Cr &gt;3倍基线）属MCC；需CRRT者权重显著提升，须记录CRRT时长。</div></div>
+          <div class="rule-item"><div class="rule-title">CKD → 须标注分期（G1~G5）和病因（原发性/继发性）</div><div class="rule-desc">CKD 5期（尿毒症）需透析者进入高权重组；腹膜透析与血液透析分属不同ADRG。</div></div>
+          <div class="rule-item"><div class="rule-title">肾穿刺活检 → 须有病理报告，依据病理结果完善诊断编码</div><div class="rule-desc">肾穿刺操作本身为诊断性操作（低权重），但病理确诊后的疾病编码（IgA/MN/FSGS等）影响分组。</div></div>
+          <div class="rule-item"><div class="rule-title">肾病综合征 → 必须标注有无MCC/CC（血栓/感染/AKI）</div><div class="rule-desc">肾病综合征合并肾静脉血栓（CT/MRI证实）属MCC；合并重症感染属高MCC。</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：CRRT与间歇性血液透析须分别编码，使用时长须与护理记录一致；腹膜透析须有管路记录。</div>
+      </div>
+
+      <!-- 血液科 -->
+      <div id="dept-hema" class="dept-rules-wrap">
+        <div class="alert" style="margin-bottom:12px;"><strong>血液科DRG核心提示：</strong>化疗方案、造血干细胞移植（HSCT）类型是最高权重分组因素；血液病诊断须有骨髓/病理依据。</div>
+        <div class="card">
+          <div class="card-header"><h3>血液科主诊及操作规则</h3></div>
+          <div class="rule-item"><div class="rule-title">造血干细胞移植 → 区分异基因/自体移植，清髓/非清髓预处理</div><div class="rule-desc">异基因HSCT权重极高（RW &gt;10）；移植后GVHD须有分级记录（I~IV级），重度GVHD属MCC。</div></div>
+          <div class="rule-item"><div class="rule-title">急性白血病 → 区分ALL/AML，明确诱导化疗方案</div><div class="rule-desc">初次诱导化疗权重高于巩固维持；APL须记录亚砷酸/ATRA使用，分化综合征须有治疗记录。</div></div>
+          <div class="rule-item"><div class="rule-title">淋巴瘤 → 区分霍奇金/非霍奇金，侵袭性/惰性，化疗方案</div><div class="rule-desc">含利妥昔单抗方案须有CD20表达检测记录；CAR-T治疗须有CRS分级监测记录。</div></div>
+          <div class="rule-item"><div class="rule-title">粒缺热 → 须明确感染来源，记录G-CSF使用时长</div><div class="rule-desc">粒缺热合并感染性休克属MCC；血培养阳性须有药敏结果和抗生素调整记录。</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：血液病诊断须有骨髓穿刺/活检、免疫分型、染色体、基因检测等结果支持，不可仅凭临床判断填报。</div>
+      </div>
+
+      <!-- 风湿免疫科 -->
+      <div id="dept-rheum" class="dept-rules-wrap">
+        <div class="alert" style="margin-bottom:12px;"><strong>风湿免疫科DRG核心提示：</strong>自身免疫病须明确脏器受累，生物制剂/靶向药物使用和脏器损伤程度影响权重。</div>
+        <div class="card">
+          <div class="card-header"><h3>风湿免疫科主诊规则</h3></div>
+          <div class="rule-item"><div class="rule-title">SLE → 须明确活动度（SLEDAI评分）和脏器受累</div><div class="rule-desc">狼疮性肾炎（须有肾活检分型）、神经精神狼疮、狼疮肺炎属MCC，须有脏器受累的实验室和影像依据。</div></div>
+          <div class="rule-item"><div class="rule-title">RA → 区分活动度（DAS28评分），明确生物制剂/JAK抑制剂使用适应证</div><div class="rule-desc">合并间质性肺炎（RA-ILD）属高权重CC；生物制剂使用须有关节评分和影像学进展依据。</div></div>
+          <div class="rule-item"><div class="rule-title">ANCA相关性血管炎 → 须明确受累血管/器官</div><div class="rule-desc">肾受累（ANCA相关性肾炎）合并AKI须有肾活检结果；重度血管炎须有血管影像学依据。</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：生物制剂治疗须有适应证记录（活动度评分、传统药物失败）；免疫抑制剂剂量须与护理记录和费用清单一致。</div>
+      </div>
+
+      <!-- 感染科 -->
+      <div id="dept-infect" class="dept-rules-wrap">
+        <div class="alert" style="margin-bottom:12px;"><strong>感染科DRG核心提示：</strong>病原体明确与否影响分组，脓毒血症须依据Sepsis-3标准，抗病毒治疗须有病毒学依据。</div>
+        <div class="card">
+          <div class="card-header"><h3>感染科主诊规则</h3></div>
+          <div class="rule-item"><div class="rule-title">病毒性肝炎 → 须明确分型和临床分型（急性/慢性/肝衰竭）</div><div class="rule-desc">慢性乙肝肝衰竭须有Child-Pugh/MELD评分，合并肝性脑病属MCC。</div></div>
+          <div class="rule-item"><div class="rule-title">脓毒血症 → 须符合Sepsis-3标准（感染 + qSOFA/SOFA评分）</div><div class="rule-desc">脓毒性休克须有血压记录（需升压药维持）+ 乳酸升高（&gt;2mmol/L），属最高MCC。</div></div>
+          <div class="rule-item"><div class="rule-title">结核病 → 区分肺结核/肺外结核/耐药结核，须有病原学或病理依据</div><div class="rule-desc">耐多药结核（MDR-TB）权重高于敏感结核；中枢神经系统结核属MCC。</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：感染性疾病诊断须有病原学证据（培养、PCR、抗原/抗体），无依据的病原体诊断属高套风险。</div>
+      </div>
+
+      <!-- 重症医学科 -->
+      <div id="dept-icu" class="dept-rules-wrap">
+        <div class="alert" style="margin-bottom:12px;"><strong>重症医学科DRG核心提示：</strong>生命支持技术（有创通气/ECMO/CRRT/IABP）是最高权重分组因素，须有使用时长和适应证记录。</div>
+        <div class="card">
+          <div class="card-header"><h3>ICU主诊及操作规则</h3></div>
+          <div class="rule-item"><div class="rule-title">有创机械通气 → 须记录插管时间、通气天数、撤机时间</div><div class="rule-desc">有创通气 &gt;96小时属极高MCC，须与麻醉单、呼吸机记录一致；ARDS须有P/F比值记录（Berlin标准）。</div></div>
+          <div class="rule-item"><div class="rule-title">ECMO → 区分V-A（心源性休克/心脏骤停后）与V-V（呼吸衰竭）</div><div class="rule-desc">ECMO使用时长须与灌注师记录、医嘱、护理记录三方一致；撤机时间须明确记录。</div></div>
+          <div class="rule-item"><div class="rule-title">MODS → 须明确受累器官（≥2个），记录SOFA评分</div><div class="rule-desc">SOFA评分≥15属极高权重；须有每个受累器官的评分依据。</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：ICU是医保稽查重点，生命支持设备使用时长须与护理记录和医嘱记录完全吻合，不得虚报使用天数。</div>
+      </div>
+
+      <!-- 眼科 -->
+      <div id="dept-ophthal" class="dept-rules-wrap">
+        <div class="alert" style="margin-bottom:12px;"><strong>眼科DRG核心提示：</strong>手术类型（白内障/青光眼/视网膜/眼眶）是分组主轴，双眼单次住院须明确编码规则。</div>
+        <div class="card">
+          <div class="card-header"><h3>眼科主诊及手术规则</h3></div>
+          <div class="rule-item"><div class="rule-title">白内障手术 → 区分超声乳化/囊外摘除，明确人工晶体类型</div><div class="rule-desc">双眼同期手术须标注双侧；飞秒激光辅助须单独编码；合并青光眼联合手术权重更高。</div></div>
+          <div class="rule-item"><div class="rule-title">视网膜脱离手术 → 区分巩膜扣带/玻璃体切除/气体/硅油填充</div><div class="rule-desc">玻璃体切除+硅油填充权重最高；PVR C级以上属MCC，须有术前广角眼底照相记录。</div></div>
+          <div class="rule-item"><div class="rule-title">青光眼 → 区分小梁切除/房水引流物植入/激光治疗</div><div class="rule-desc">引流阀植入（Ahmed/Baerveldt）权重高于小梁切除；急性闭角型青光眼发作须有眼压记录。</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：眼科手术耗材（人工晶体型号、引流阀品规）须与费用清单和手术记录一致；双眼同期手术须符合单次住院编码规范。</div>
+      </div>
+
+      <!-- 耳鼻喉科 -->
+      <div id="dept-ent" class="dept-rules-wrap">
+        <div class="alert" style="margin-bottom:12px;"><strong>耳鼻喉科DRG核心提示：</strong>头颈肿瘤根治手术与功能性手术权重差异大，须精确区分手术范围和修复重建方式。</div>
+        <div class="card">
+          <div class="card-header"><h3>耳鼻喉科主诊及手术规则</h3></div>
+          <div class="rule-item"><div class="rule-title">喉癌/下咽癌手术 → 区分部分切除/全喉切除/根治性颈清扫</div><div class="rule-desc">全喉切除+颈清扫权重最高；修复重建（游离皮瓣/肌皮瓣）须单独编码，联合手术权重更高。</div></div>
+          <div class="rule-item"><div class="rule-title">鼻腔鼻窦手术 → 区分FESS范围（单窦/多窦/全组）</div><div class="rule-desc">全组鼻窦开放（Draf III）权重高于单窦手术；合并颅底侵犯者须有影像学支持。</div></div>
+          <div class="rule-item"><div class="rule-title">人工耳蜗植入 → 须有听力评估（ABR/ASSR）和CT/MRI提示耳蜗形态正常</div><div class="rule-desc">人工耳蜗属极高值耗材，权重极高；须有听力学委员会评估记录。</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：头颈肿瘤手术的颈清扫范围须与术中记录和病理报告的淋巴结数目一致。</div>
+      </div>
+
+      <!-- 精神科 -->
+      <div id="dept-psych" class="dept-rules-wrap">
+        <div class="alert" style="margin-bottom:12px;"><strong>精神科DRG核心提示：</strong>精神科独立进入U-MDC系列，住院目的（急性期/慢性维持）和合并躯体疾病是分组关键。</div>
+        <div class="card">
+          <div class="card-header"><h3>精神科主诊规则</h3></div>
+          <div class="rule-item"><div class="rule-title">精神分裂症 → 须标注发作类型（首次/复发/难治）、严重程度（PANSS评分）</div><div class="rule-desc">首次发作住院权重高于慢性维持期；难治性须有两种以上抗精神病药物足量足疗程失败记录。</div></div>
+          <div class="rule-item"><div class="rule-title">双相情感障碍 → 区分躁狂/抑郁/混合发作，明确严重程度</div><div class="rule-desc">伴精神病性症状的躁狂发作权重高于不伴；须有YMRS/HDRS量表评分记录。</div></div>
+          <div class="rule-item"><div class="rule-title">MECT（改良电休克治疗）→ 须有治疗次数、麻醉记录和适应证</div><div class="rule-desc">须有适应证（难治性抑郁/危及生命的精神症状）；不得以MECT次数虚高权重。</div></div>
+          <div class="rule-item"><div class="rule-title">精神科合并躯体疾病 → 合并症须有积极治疗证据，否则不得列为CC</div><div class="rule-desc">须有专科会诊记录和治疗措施。</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：精神科诊断须有精神科专科评估和诊断量表依据；不得将日常监测性住院填报为急性发作期。</div>
+      </div>
+
+      <!-- 康复科 -->
+      <div id="dept-rehab" class="dept-rules-wrap">
+        <div class="alert" style="margin-bottom:12px;"><strong>康复科DRG核心提示：</strong>康复病种须有明确原发病，康复治疗方案和功能评定是分组依据，FIM评分直接影响分组。</div>
+        <div class="card">
+          <div class="card-header"><h3>康复科主诊及评定规则</h3></div>
+          <div class="rule-item"><div class="rule-title">脑卒中后康复 → 须有入院FIM评分，主诊为后遗症（I69系列）</div><div class="rule-desc">FIM评分≤40（重度功能障碍）权重高于轻度；须记录入院/出院FIM变化值作为康复疗效证明。</div></div>
+          <div class="rule-item"><div class="rule-title">骨折后康复 → 主诊须为骨折愈合阶段或功能障碍，而非原始骨折编码</div><div class="rule-desc">关节置换术后康复须标注置换类型和手术日期；须有关节活动度测量记录（ROM）。</div></div>
+          <div class="rule-item"><div class="rule-title">脊髓损伤康复 → 须有ASIA分级（A/B/C/D/E），明确损伤平面</div><div class="rule-desc">完全性脊髓损伤（ASIA A级）权重高于不完全性；须有神经功能评定和膀胱管理记录。</div></div>
+          <div class="rule-item"><div class="rule-title">康复治疗项目 → PT/OT/ST须有每日治疗记录，次数与费用清单一致</div><div class="rule-desc">不得虚填康复治疗次数；FIM评分须由专业康复治疗师完成并签字。</div></div>
+        </div>
+        <div class="alert alert-danger">合规警示：康复科是医保稽查重点，康复治疗项目须有每日治疗记录；FIM评分须由专业康复治疗师完成并签字。</div>
+      </div>
+
+    </div>
+
+    <!-- ─── Panel: DRG 基础 ────────────────────────── -->
+    <div id="panel-drg" class="panel">
+
+      <div class="section-label">CHS-DRG 2.0 核心分组三步法</div>
+      <div class="card" style="margin-bottom:12px;">
+        <div class="rule-item">
+          <div class="rule-title">
+            <span class="inline-tag" style="background:var(--blue);color:#fff;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;">1</span>
+            MDC 大类（主诊断决定）
+          </div>
+          <div class="rule-desc">26个MDC大类，由主要诊断ICD-10编码唯一决定。<strong>主诊选错 = MDC错 = 整个分组全部错误。</strong></div>
+        </div>
+        <div class="rule-item">
+          <div class="rule-title">
+            <span class="inline-tag" style="background:var(--blue-light);color:var(--blue-dark);border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;">2</span>
+            ADRG 核心组（主诊 + 手术）
+          </div>
+          <div class="rule-desc">主诊断 + 主要手术/操作共同决定进入哪个核心DRG组（ADRG）。2.0版共409个ADRG，较1.0版增加33组。</div>
+        </div>
+        <div class="rule-item">
+          <div class="rule-title">
+            <span class="inline-tag" style="background:var(--gray-bg);color:var(--text-sub);border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;">3</span>
+            DRG 细分组（CC/MCC细分）
+          </div>
+          <div class="rule-desc">其他诊断中的严重合并症（MCC）→ 高权重组；普通合并症（CC）→ 中权重组；无CC/MCC → 低权重组。</div>
+        </div>
+      </div>
+
+      <div class="section-label">支付标准计算公式</div>
+      <div class="card" style="margin-bottom:12px;">
+        <div style="padding:14px;">
+          <div style="text-align:center;font-size:15px;font-weight:600;color:var(--blue);padding:10px;background:var(--blue-light);border-radius:var(--radius-md);margin-bottom:10px;">
+            支付标准 = DRG权重 × 费率
+          </div>
+          <div class="rule-desc" style="margin-bottom:6px;">
+            <strong>权重：</strong>该病组例均费用 ÷ 全部病例例均费用（反映资源消耗相对程度）
+          </div>
+          <div class="rule-desc" style="margin-bottom:6px;">
+            <strong>费率：</strong>各地不同。北京2025年费率20,425元；四川省采用点数法付费，基准点数和系数由各市（州）确定
+          </div>
+          <div class="rule-desc">
+            <strong>示例：</strong>若病组权重 = 2.5，则支付标准 ≈ 2.5 × 20,425 = <strong>51,063 元</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-label">主要诊断"三最原则"</div>
+      <div class="card" style="margin-bottom:12px;">
+        <div class="rule-item"><div class="rule-title">危害最大 <span class="inline-tag tag-mcc">首选</span></div><div class="rule-desc">本次住院对患者健康危害程度最重的疾病</div></div>
+        <div class="rule-item"><div class="rule-title">消耗最多</div><div class="rule-desc">消耗药品、耗材、检查等医疗资源最多的疾病</div></div>
+        <div class="rule-item"><div class="rule-title">住院最长</div><div class="rule-desc">导致住院时间延长最多的疾病诊断</div></div>
+      </div>
+
+      <div class="section-label">特例单议申报条件（2025版规程）</div>
+      <div class="card" style="margin-bottom:12px;">
+        <div class="rule-item"><div class="rule-desc">① 住院费用超过病组支付标准 <strong>3倍及以上</strong></div></div>
+        <div class="rule-item"><div class="rule-desc">② 使用创新药品、创新医疗技术或高值耗材</div></div>
+        <div class="rule-item"><div class="rule-desc">③ 多学科联合诊疗（MDT）或复杂手术转科病例</div></div>
+        <div class="rule-item"><div class="rule-desc">④ 现行分组方案未能涵盖的罕见病例</div></div>
+        <div style="padding:10px 14px;font-size:12px;color:var(--text-sub);">申报比例：原则上不超过DRG出院总病例的 <strong>5%</strong></div>
+      </div>
+
+      <div class="alert">
+        ⚠️ <strong>合规底线：</strong>诊断排序须真实反映临床诊疗过程。通过虚增诊断、人为调整主诊高套权重属违规，医保稽核将追回款项并处罚。
+      </div>
+
+      <div class="section-label">手术操作对权重的影响（参考值）</div>
+      <div class="card" style="margin-bottom:12px;">
+        <div class="rule-item">
+          <div class="rule-title" style="justify-content:space-between;">
+            <span>内科保守治疗（无手术）</span>
+            <span class="rw-badge rw-low" style="font-size:10px;">RW 0.5 ~ 1.5</span>
+          </div>
+          <div class="rule-desc">无手术操作编码，进入内科DRG组，权重最低。MCC/CC可提升至1.5左右。</div>
+        </div>
+        <div class="rule-item">
+          <div class="rule-title" style="justify-content:space-between;">
+            <span>一般手术（阑尾切除/腹腔镜胆囊等）</span>
+            <span class="rw-badge rw-mid" style="font-size:10px;">RW 1.5 ~ 2.5</span>
+          </div>
+          <div class="rule-desc">常见择期手术，进入外科DRG组，权重约为内科组2倍。合并MCC可升至3.0。</div>
+        </div>
+        <div class="rule-item">
+          <div class="rule-title" style="justify-content:space-between;">
+            <span>中等手术（关节置换/PCI单支/肿瘤根治等）</span>
+            <span class="rw-badge rw-mid" style="font-size:10px;">RW 2.5 ~ 4.5</span>
+          </div>
+          <div class="rule-desc">手术难度中等，技术要求高，是大多数科室的主要高权重分组区间。</div>
+        </div>
+        <div class="rule-item">
+          <div class="rule-title" style="justify-content:space-between;">
+            <span>复杂手术（多节段脊柱融合/多支血管PCI等）</span>
+            <span class="rw-badge rw-high" style="font-size:10px;">RW 4.5 ~ 8.0</span>
+          </div>
+          <div class="rule-desc">技术难度大、耗材多、手术时间长，须有完整操作记录和内固定/耗材使用记录。</div>
+        </div>
+        <div class="rule-item">
+          <div class="rule-title" style="justify-content:space-between;">
+            <span>极复杂手术（TAVR/ECMO辅助/多脏器联合切除等）</span>
+            <span class="rw-badge rw-high" style="font-size:10px;">RW 8.0 ~ 15.0+</span>
+          </div>
+          <div class="rule-desc">顶级术式，需多学科团队、高值耗材、完整评估记录，是医院DRG最高权重来源。</div>
+        </div>
+        <div style="padding:8px 14px 10px;font-size:11px;color:var(--text-sub);background:var(--blue-light);border-top:1px solid var(--gray-line);">
+          📌 以北京2025费率 <strong>20,425元</strong> 为例：RW=3.0 → 支付约 <strong>61,275元</strong>；RW=6.0 → 支付约 <strong>122,550元</strong>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── Panel: 历史记录 ────────────────────────── -->
+    <div id="panel-history" class="panel">
+      <div class="section-label">本次会话记录</div>
+      <div id="history-list">
+        <div class="empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 8v4M12 16h.01"/>
+          </svg>
+          <div>暂无分析记录</div>
+          <div style="font-size:11px;margin-top:4px;">完成AI分析后自动保存于此</div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+  <div style="text-align:center;padding:12px 16px 16px;font-size:10px;color:var(--text-hint);border-top:1px solid var(--gray-line);">
+    设计者：宜宾市第二人民医院重症医学科&nbsp;&nbsp;邱俊
+  </div>
+</div>
+
+<!-- ═══ API KEY MODAL ═══════════════════════════════ -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-title">设置 API 密钥</div>
+    <div class="modal-desc">
+      请输入 AI 大模型 API Key（sk-xxxxx 格式）。密钥仅保存在本地浏览器，不会上传。
+    </div>
+    <label class="modal-label">API Key（sk-xxxxx 格式）</label>
+    <input type="password" class="modal-input" id="api-key-input" placeholder="sk-xxxxxxxxxxxxxxxx">
+    <div class="modal-footer">
+      <button class="btn-sec" onclick="closeModal()">取消</button>
+      <button class="btn-save" onclick="saveApiKey()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════
+   STATE
+══════════════════════════════════════════════════ */
+let currentImg    = null;
+let currentOpImg  = null;
+let currentDept   = '通用';
+const QWEN_URL    = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
+const TEXT_MODEL  = 'qwen-plus';
+const VL_MODEL    = 'qwen3-vl-plus';  /* 视觉理解模型 */
+const HISTORY_KEY = 'drg_history_v2';
+const MAX_HISTORY = 50;
+
+/* ── 历史记录持久化 ── */
+function loadHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+  } catch(e) { return []; }
+}
+function persistHistory(arr) {
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(arr.slice(0, MAX_HISTORY))); } catch(e) {}
+}
+let historyArr = loadHistory();
+
+/* ══════════════════════════════════════════════════
+   API KEY
+══════════════════════════════════════════════════ */
+function getApiKey() { return localStorage.getItem('qwen_api_key') || ''; }
+function openModal()  {
+  document.getElementById('api-key-input').value = getApiKey();
+  document.getElementById('modal-overlay').classList.add('open');
+}
+function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
+function saveApiKey() {
+  const k = document.getElementById('api-key-input').value.trim();
+  if (k) { localStorage.setItem('qwen_api_key', k); closeModal(); alert('API 密钥已保存'); }
+  else    { alert('请输入有效的 API Key'); }
+}
+
+/* ══════════════════════════════════════════════════
+   TAB NAVIGATION
+══════════════════════════════════════════════════ */
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach((b,i) =>
+    b.classList.toggle('active', ['analyze','dept','drg','history'][i] === name)
+  );
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  if (name === 'history') renderHistory();
+}
+
+/* ══════════════════════════════════════════════════
+   DEPT SELECTOR (Collapsible)
+══════════════════════════════════════════════════ */
+function toggleDeptPanel(prefix, forceClose) {
+  const body   = document.getElementById(prefix + '-body');
+  const toggle = body.previousElementSibling;
+  if (forceClose) {
+    toggle.classList.remove('open');
+    body.classList.remove('open');
+  } else {
+    toggle.classList.toggle('open');
+    body.classList.toggle('open');
+  }
+}
+
+function selectDept(el) {
+  document.querySelectorAll('#analyze-dept-body .dept-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  currentDept = el.dataset.dept;
+  document.getElementById('analyze-dept-label').textContent = '当前：' + currentDept;
+  try { localStorage.setItem('drg_last_dept', currentDept); } catch(e) {}
+  updatePlaceholder();
+  /* Auto-collapse after selection */
+  setTimeout(() => toggleDeptPanel('analyze-dept', true), 150);
+}
+
+function updatePlaceholder() {
+  const placeholders = {
+    '骨科':    '例如：\n右股骨颈骨折\n右全髋关节置换术\n深静脉血栓形成\n高血压病2级\n2型糖尿病',
+    '肿瘤科':  '例如：\n胃恶性肿瘤（根治术后）\n化学治疗\n恶性胸腔积液\nⅣ度骨髓抑制\n低白蛋白血症',
+    '心内科':  '例如：\n急性前壁心肌梗死\n经皮冠状动脉介入治疗\n心源性休克\n完全性房室传导阻滞\n2型糖尿病',
+    '心外科':  '例如：\n冠心病三支病变\n冠状动脉旁路移植术\n术后低心排综合征\nIABP辅助\n高血压病3级',
+    '神经内科':'例如：\n急性大脑中动脉脑梗死\n静脉溶栓治疗\n高血压病3级极高危\n2型糖尿病\n肺部感染',
+    '神经外科':'例如：\n右额颞叶胶质瘤（WHOⅢ级）\n颅内肿瘤切除术（开颅）\n颅内压增高\n激素治疗\n癫痫发作',
+    '呼吸科':  '例如：\nCOPD急性加重（重度）\nⅡ型呼吸衰竭\n有创机械通气（>96h）\n肺部感染（铜绿假单胞菌）\n肺心病',
+    '消化内科':'例如：\n上消化道出血（重度）\n胃十二指肠溃疡（活动期）\n内镜下止血治疗\n失血性贫血\n高血压病2级',
+    '普外科':  '例如：\n结肠恶性肿瘤\n腹腔镜结肠癌根治术（D3）\n腹腔感染\n低白蛋白血症\n高血压病2级',
+    '胸外科':  '例如：\n右肺上叶恶性肿瘤（鳞癌，T2N1M0）\n胸腔镜右肺上叶切除+纵隔淋巴结清扫\n术后肺漏气\n高血压病2级\n2型糖尿病',
+    '血管外科':'例如：\n腹主动脉瘤（破裂）\n急诊腔内主动脉修复术（EVAR）\n急性肾损伤\n凝血功能障碍\n高血压病3级',
+    '泌尿外科':'例如：\n肾盂恶性肿瘤（T2N0M0）\n腹腔镜根治性肾切除术\n肾功能不全（CKD3期）\n高血压病2级\n2型糖尿病',
+    '妇科':    '例如：\n子宫颈恶性肿瘤（IB2期）\n广泛性子宫切除+盆腔淋巴结清扫术\n贫血（中度）\n高血压病1级',
+    '产科':    '例如：\n孕39周，第一胎，枕前位，足月顺产\n重度子痫前期\n产后出血（1200ml）\n妊娠期糖尿病\n胎盘植入',
+    '儿科':    '例如：\n重症肺炎（细菌性）\nⅡ型呼吸衰竭\n无创正压通气\n心力衰竭\n先天性心脏病（室间隔缺损）',
+    '内分泌科':'例如：\n2型糖尿病酮症酸中毒（重度）\n糖尿病肾病（IV期）\n糖尿病周围神经病变\n高血压病3级（极高危）',
+    '肾内科':  '例如：\n急性肾损伤（KDIGO 3期）\n连续肾脏替代治疗（CRRT）\n脓毒血症\n多器官功能障碍\n代谢性酸中毒',
+    '血液科':  '例如：\n急性髓系白血病（AML-M2）\n诱导化疗（DA方案）\nⅣ度骨髓抑制\n粒缺热（铜绿假单胞菌败血症）\nDIC',
+    '风湿免疫科':'例如：\n系统性红斑狼疮（活动期，SLEDAI 18分）\n狼疮性肾炎（IV型）\n急性肾损伤\n心包积液\n大剂量激素冲击治疗',
+    '感染科':  '例如：\n慢性乙型肝炎（重度）\n慢加急性肝衰竭\n肝性脑病（II期）\n腹腔感染（SBP）\n低白蛋白血症',
+    '急诊科':  '例如：\n多发伤（腹腔脏器损伤+肋骨骨折）\n创伤性失血性休克\n急诊剖腹探查\n急性肾损伤\nDIC',
+    '重症医学科':'例如：\n急性呼吸窘迫综合征（重度，P/F<100）\n有创机械通气（120h）\n脓毒性休克\n急性肾损伤（CRRT）\n多器官功能障碍综合征',
+    '眼科':    '例如：\n白内障（老年性，核硬度IV级）\n超声乳化白内障摘除+人工晶体植入\n视网膜脱离（陈旧性，PVR C级）\n高度近视',
+    '耳鼻喉科':'例如：\n声门型喉癌（T3N0M0）\n全喉切除+气管造瘘+颈清扫术\n术后咽瘘\n营养不良（中度）\n高血压病1级',
+    '精神科':  '例如：\n精神分裂症（偏执型，首次发作，PANSS阳性量表35分）\n改良电休克治疗（MECT，8次）\n药源性帕金森综合征\n2型糖尿病',
+    '康复科':  '例如：\n脑梗死恢复期（右侧肢体偏瘫，FIM评分42分）\n肺炎（吸入性）\n吞咽功能障碍\n高血压病2级\n2型糖尿病',
+    '通用':    '每行输入一个诊断，例如：\n冠状动脉粥样硬化性心脏病\n急性前壁心肌梗死\n高血压病3级（极高危）\n2型糖尿病',
+  };
+  document.getElementById('manual-input').placeholder =
+    placeholders[currentDept] || placeholders['通用'];
+}
+
+/* ══════════════════════════════════════════════════
+   DEPT RULES TOGGLE
+══════════════════════════════════════════════════ */
+function showDeptRule(el, id) {
+  document.querySelectorAll('#rule-dept-body .dept-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('.dept-rules-wrap').forEach(d => d.classList.remove('active'));
+  document.getElementById('dept-' + id).classList.add('active');
+  document.getElementById('rule-dept-label').textContent = '当前：' + el.textContent;
+  /* Auto-collapse after selection */
+  setTimeout(() => toggleDeptPanel('rule-dept', true), 150);
+}
+
+/* ══════════════════════════════════════════════════
+   FILE / IMAGE HANDLING
+══════════════════════════════════════════════════ */
+function handleFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    currentImg = ev.target.result;
+    document.getElementById('preview-img').src = currentImg;
+    document.getElementById('img-preview').style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearImage() {
+  currentImg = null;
+  document.getElementById('img-preview').style.display = 'none';
+  document.getElementById('file-input-camera').value = '';
+  document.getElementById('file-input-album').value  = '';
+}
+
+function handleOpFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    currentOpImg = ev.target.result;
+    document.getElementById('op-preview-img').src = currentOpImg;
+    document.getElementById('op-img-preview').style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearOpImage() {
+  currentOpImg = null;
+  document.getElementById('op-img-preview').style.display = 'none';
+  document.getElementById('op-file-input-camera').value = '';
+  document.getElementById('op-file-input-album').value  = '';
+}
+
+/* ══════════════════════════════════════════════════
+   LOADING
+══════════════════════════════════════════════════ */
+function setLoading(pct, msg) {
+  const wrap = document.getElementById('loading-wrap');
+  wrap.classList.toggle('active', pct > 0 && pct < 100);
+  document.getElementById('loading-fill').style.width = pct + '%';
+  document.getElementById('loading-msg').textContent = msg;
+}
+
+/* ══════════════════════════════════════════════════
+   DEPT-SPECIFIC PROMPT ADDENDUM
+══════════════════════════════════════════════════ */
+function getDeptPrompt(dept) {
+  const rules = {
+    '骨科': '【骨科专项规则】\n- 多部位损伤时，以对健康危害最大的损伤作为主要诊断（神经损伤通常优先于骨折）\n- 脊柱手术须区分颈/胸/腰段及前路/后路入路，精确编码\n- 关节置换须区分初次/翻修、单侧/双侧，翻修权重显著更高\n- 合并骨髓炎、深部感染、DVT、肺栓塞为MCC/CC高权重项\n- 骨科术后DVT、脂肪栓塞、ARDS须有治疗记录方可填报',
+    '肿瘤科': '【肿瘤科专项规则】\n- 本次入院目的决定主诊：手术→恶性肿瘤本身；单纯化疗→Z51.1；单纯放疗→Z51.0\n- 因并发症（肠梗阻、出血等）入院→主诊选并发症，原发肿瘤为其他诊断\n- 化疗后骨髓抑制程度须标注（Ⅳ度=MCC）；恶性积液须有穿刺引流记录\n- 肿瘤溶解综合征、DIC、脓毒血症为高MCC，如有须列出',
+    '心内科': '【心内科专项规则】\n- AMI须明确部位（前壁/下壁/侧壁）和类型（STEMI/NSTEMI），有PCI时仍以AMI为主诊\n- 心衰须标注类型（收缩性/舒张性）和NYHA分级，NYHA Ⅲ-Ⅳ级属MCC\n- 介入手术须精确记录：PCI单支/多支血管、支架类型（DES/BMS）、CTO病变\n- 心源性休克、完全性AVB、室颤/室速电复律为MCC\n- ECMO使用须记录适应证和使用时长',
+    '心外科': '【心外科专项规则】\n- CABG须区分体外循环/非体外循环、桥血管数目，多支搭桥权重更高\n- 瓣膜手术须区分置换/成形、单瓣/双瓣、机械瓣/生物瓣，双瓣权重最高\n- 主动脉手术须区分根部/升主/弓部，全弓替换+支架象鼻权重极高\n- 合并CABG的联合手术属最高权重，须体外循环时间和停循环时长记录\n- 术后IABP/ECMO辅助、CRRT为高权重MCC，须记录时长',
+    '神经内科': '【神经内科专项规则】\n- 脑梗死须区分部位（前循环/后循环）和病因（大动脉粥样硬化/心源性/小血管病）\n- 静脉溶栓（tPA）和血管内取栓为高权重操作，须有时间窗记录\n- 出血性脑卒中须区分硬膜下/硬膜外/蛛网膜下腔/脑实质出血\n- 癫痫持续状态须有脑电图监测记录\n- 重症肌无力危象须有肺功能（FVC）和呼吸支持记录',
+    '神经外科': '【神经外科专项规则】\n- 颅内肿瘤须区分良性/恶性、部位和切除程度（全切/次全切/活检），恶性权重更高\n- 动脉瘤：夹闭或介入栓塞权重远高于保守，须区分SAH Hunt-Hess分级\n- 脊柱脊髓手术主诊通常为脊髓/神经根压迫（G系列），与骨科骨折分组不同\n- 脑积水手术（V-P分流/ETV）须有影像学脑室扩大记录',
+    '呼吸科': '【呼吸科专项规则】\n- 肺炎须区分细菌性/病毒性/真菌性，有病原学结果时使用合并编码\n- COPD急性加重须标注严重程度和触发因素\n- 呼吸衰竭须区分Ⅰ型（低氧）/Ⅱ型（高碳酸），有创通气为MCC\n- 肺栓塞须区分大面积/次大面积/低危，溶栓治疗为高权重操作\n- 间质性肺病急性加重须有HRCT依据，有创通气>96h属极高MCC',
+    '消化内科': '【消化内科专项规则】\n- 消化道出血须明确来源（上/下消化道）和止血方式（内镜/介入/保守）\n- 治疗性ERCP（取石/引流/括约肌切开）权重约为诊断性2倍\n- 肝硬化须标注合并症（腹水/静脉曲张/肝性脑病），Child-Pugh C级属MCC\n- IBD须区分克罗恩病/溃疡性结肠炎，标注活动度评分\n- 急性重症胰腺炎须有CTSI评分和器官衰竭记录',
+    '普外科': '【普外科专项规则】\n- 胃肠肿瘤手术须区分根治/姑息切除，明确淋巴结清扫数目\n- 胰十二指肠切除术（Whipple）属极高权重，须区分经典/保留幽门术式\n- 腹腔镜手术中转开腹须按实际完成术式编码，不得仍按腹腔镜填报\n- 急腹症须如实记录穿孔/绞窄情况，穿孔腹膜炎权重远高于单纯炎症\n- 肝切除须明确切除段数，须有出血量记录',
+    '胸外科': '【胸外科专项规则】\n- 肺癌手术须区分楔形/肺段/肺叶/全肺切除，须记录淋巴结清扫\n- VATS（胸腔镜）和机器人辅助须单独编码，与开胸手术区分\n- 食管癌手术须区分颈/胸/腹三切口术式，术后吻合口瘘属MCC\n- 纵隔肿瘤须有病理分型（WHO分型），胸腺癌与胸腺瘤编码不同\n- 联合脏器切除须全部记录操作编码',
+    '血管外科': '【血管外科专项规则】\n- 主动脉瘤须区分EVAR/开放手术，破裂主动脉瘤急诊手术为最高权重\n- 下肢动脉闭塞须区分腔内治疗（PTA/支架）/搭桥/截肢\n- 深静脉血栓须区分导管溶栓/机械取栓/滤器/系统溶栓，CDT权重更高\n- 大面积肺栓塞须有RV/LV比和休克记录\n- 腔内器材规格须与耗材台账一致',
+    '泌尿外科': '【泌尿外科专项规则】\n- 前列腺癌根治术须区分开放/腹腔镜/机器人辅助，机器人辅助须单独编码\n- 肾癌须区分根治性肾切除/肾部分切除，注明肿瘤大小和切缘\n- 尿路结石手术须区分ESWL/输尿管镜碎石/PCNL，PCNL权重最高\n- 根治性膀胱切除+尿流改道权重极高，须记录淋巴结清扫',
+    '妇科': '【妇科专项规则】\n- 宫颈癌/子宫内膜癌/卵巢癌根治手术须明确分期、淋巴结清扫范围\n- 子宫切除须区分全切/次全切、腹腔镜/开腹/机器人，有无附件切除\n- 宫腔镜手术须区分诊断性/治疗性，治疗性权重更高\n- 妇科恶性肿瘤须有术前肿瘤标志物、术中冷冻切片和术后病理支持',
+    '产科': '【产科专项规则】\n- 分娩方式须精确记录：自然分娩/助产/择期剖宫产/急诊剖宫产\n- 重度子痫前期（收缩压≥160mmHg或有器官损伤）属MCC\n- 产后出血须记录出血量（≥500ml），需子宫切除止血为极高权重\n- 妊娠期糖尿病须区分GDM/糖尿病合并妊娠\n- 胎盘植入/前置胎盘须有超声依据',
+    '儿科': '【儿科专项规则】\n- 新生儿疾病独立进入P系列，胎龄（早产/足月）是分组关键参数\n- 极低体重儿（<1500g）和超低体重儿（<1000g）权重极高\n- 小儿先天性心脏病手术须区分根治/姑息/分期手术\n- 儿科年龄须与病历首页精确一致，新生儿精确到天数',
+    '内分泌科': '【内分泌科专项规则】\n- DKA须区分有无昏迷，有昏迷权重远更高；须有血糖/血酮/pH值记录\n- 糖尿病肾病须标注分期（I~V期），IV期以上属高权重CC\n- 糖尿病足须标注Wagner分级，III级以上为MCC\n- 甲状腺危象须有Burch-Wartofsky评分≥45分和ICU记录\n- 垂体/肾上腺手术权重远高于保守治疗',
+    '肾内科': '【肾内科专项规则】\n- AKI须标注KDIGO分期（1/2/3期），3期属MCC；须有Cr基线值对比\n- CRRT须记录使用时长，权重显著高于间歇性透析\n- CKD须标注G1~G5分期，CKD 5期接受透析为高权重\n- 肾穿刺活检后须依据病理结果完善诊断编码\n- 肾病综合征合并血栓/感染/AKI属高价值MCC',
+    '血液科': '【血液科专项规则】\n- 造血干细胞移植须区分异基因/自体、清髓/非清髓，异基因权重极高\n- 移植后GVHD须有分级（I~IV级），重度属MCC\n- 急性白血病化疗须区分诱导/巩固/挽救方案，初次诱导权重最高\n- CAR-T治疗须有CRS分级（1~4级）监测记录\n- 粒缺热合并感染性休克须有血培养和升压药使用记录',
+    '风湿免疫科': '【风湿免疫科专项规则】\n- SLE须标注SLEDAI评分和受累脏器，狼疮性肾炎须有肾活检病理分型\n- RA须有DAS28评分，生物制剂/JAK抑制剂须有传统药物失败记录\n- 血管炎须明确受累器官，ANCA相关性肾炎须有肾活检和ANCA结果\n- 合并间质性肺病须有HRCT依据，属高权重CC',
+    '感染科': '【感染科专项规则】\n- 病毒性肝炎须明确分型，肝衰竭须有Child-Pugh/MELD评分\n- 脓毒血症须符合Sepsis-3标准，脓毒性休克须有血压和乳酸值记录\n- 结核病须区分肺结核/肺外/耐药，须有病原学或病理依据\n- 感染性疾病诊断须有病原学证据（培养、PCR、抗原/抗体）',
+    '急诊科': '【急诊科专项规则】\n- 急诊创伤须按主要损伤（危害最重）确定主诊，多发伤须记录ISS评分\n- 急性中毒须明确毒物类型和中毒途径，清醒/昏迷状态影响分组\n- 急诊手术须区分急诊/择期，急诊权重更高\n- 心肺复苏后须记录CPR时长、转归\n- 急性脑卒中须记录发病到就诊时间、是否在时间窗内溶栓/取栓',
+    '重症医学科': '【重症医学科专项规则】\n- 有创机械通气须记录插管时间、通气天数，>96小时属极高MCC\n- ECMO须区分V-A/V-V，使用时长须与灌注师记录、医嘱三方一致\n- MODS须明确受累器官（≥2个），SOFA评分≥15属极高权重\n- CRRT使用时长须与护理记录完全吻合\n- 脓毒性休克须有血压记录（需升压药维持）+ 乳酸>2mmol/L',
+    '眼科': '【眼科专项规则】\n- 白内障须区分超声乳化/囊外摘除，人工晶体类型须与费用清单一致\n- 双眼同期手术须标注双侧，须符合单次住院编码规范\n- 视网膜手术须区分玻璃体切除/巩膜扣带，PVR分级须记录\n- 青光眼手术须区分小梁切除/引流阀植入/激光治疗，引流阀权重更高',
+    '耳鼻喉科': '【耳鼻喉科专项规则】\n- 喉癌/下咽癌手术须区分部分切除/全喉切除/颈清扫范围\n- 修复重建（游离皮瓣/肌皮瓣）须单独编码，联合手术权重更高\n- FESS手术须区分单窦/多窦/全组，范围越广权重越高\n- 人工耳蜗植入须有听力评估（ABR）和影像学支持',
+    '精神科': '【精神科专项规则】\n- 精神科独立进入U-MDC系列，须明确疾病分型和发作类型\n- 精神分裂症须标注PANSS评分，难治性须有两种抗精神病药失败记录\n- MECT须有麻醉记录、治疗次数和适应证\n- 精神科合并躯体疾病须有会诊记录和治疗措施，否则不得列为CC',
+    '康复科': '【康复科专项规则】\n- 康复主诊须为后遗症/功能障碍（非原发病急性期编码）\n- FIM评分须在入院和出院各评定一次，变化值是康复疗效证据\n- 脊髓损伤须有ASIA分级（A~E级）和损伤平面记录\n- 康复治疗项目（PT/OT/ST）须有每日治疗记录，次数与费用清单一致',
+  };
+  return rules[dept] || '';
+}
+
+/* ══════════════════════════════════════════════════
+   BUILD PROMPT
+══════════════════════════════════════════════════ */
+function buildSystemPrompt() {
+  return `你是中国顶级医院的DRG病案质控专家，深度熟悉CHS-DRG 2.0版分组规则（2025年1月全国统一执行）和ICD-10/ICD-9-CM-3编码规范。你的任务是在完全合规的前提下，帮助医生优化出院诊断的排列顺序以达到合理的最高DRG权重。
+
+【权重估算要求】权重估算必须准确，不得系统性偏低。重症患者（有创通气/ECMO/脓毒性休克/MODS）的DRG权重通常在6~12之间，绝不是1~3。MCC对权重的乘数作用极大，必须充分体现。请直接输出JSON，不要输出任何思考过程、解释文字或markdown代码块标记。`;
+}
+
+function buildUserPrompt(text, dept, opText) {
+  const deptExtra = getDeptPrompt(dept);
+  const opSection = opText
+    ? `\n【本次住院手术/操作列表】\n${opText}\n`
+    : '\n【本次住院手术/操作列表】\n无（保守治疗，内科分组）\n';
+  return `我是${dept === '通用' ? '临床' : dept}科医生，以下是患者的出院诊断列表：
+
+${text}
+${opSection}
+请根据CHS-DRG 2.0分组规则分析并给出优化建议：
+
+【核心规则】
+1. 主要诊断"三最原则"：对患者危害最大、消耗医疗资源最多、住院时间最长
+2. 主诊断决定MDC大类 → MDC + 主要手术决定ADRG核心组 → 其他诊断的MCC/CC决定细分组权重
+3. MCC（严重合并症/并发症）> CC（合并症/并发症）> 无CC权重依次递减
+4. 手术操作是权重最关键因素：大手术权重可达内科组3~10倍；同一手术操作编码精确度直接影响分组
+5. 所有诊断填写须真实反映临床诊疗，不得虚增
+
+【主诊断选择规则 — 核心原则】
+
+▶ 最高原则：在临床合规的前提下，选择能进入最高权重DRG组的主诊断。
+当多个诊断均可合理作为主诊时，必须比较不同主诊选择对应的MDC→ADRG→DRG入组路径，推荐权重最优的方案。
+
+▶ CHS-DRG 2.0 分组优先级（必须掌握）：
+第一步：先期分组（MDCA）— 有创呼吸机≥96h / ECMO / 器官移植 → 无论主诊是什么都优先进入MDCA，但主诊仍影响ADRG细分
+第二步：新生儿（MDCP）— 年龄<29天
+第三步：HIV（MDCY）
+第四步：多发严重创伤（MDCZ）
+第五步：常规MDC — 由主诊断ICD-10编码决定进入哪个MDC
+
+▶ 主诊断选择的核心逻辑：
+- 主诊断决定MDC大类，MDC+手术决定ADRG，其他诊断的MCC/CC决定细分组权重
+- 同一组诊断，不同的主诊选择可能进入完全不同的MDC和ADRG，权重差异巨大
+- 必须评估：主诊选A进入X组 vs 主诊选B进入Y组，哪个权重更高？
+- 例如：脓毒症做主诊进入SR1（败血症）组，通常权重高于重症肺炎做主诊进入ER组
+- 例如：神经损伤做主诊进入B系列（神经系统），通常权重高于骨折做主诊进入I系列
+
+▶ 以下编码是附加编码，绝对不能作为主诊断：
+- 脓毒性休克 R57.2（附加编码）
+- SIRS伴器官功能障碍 R65.1（附加编码）
+- 心源性休克 R57.0（附加编码）
+- DIC D65（附加编码，主诊选原发病）
+- 气管造口状态 Z93.0 等状态附加编码（化疗Z51.1/放疗Z51.0除外）
+- CHS-DRG 2.0版明确的1849条不作为入组规则的疾病诊断
+- 医保灰码（以00结尾的非特指编码，下级有更细致分类时不应使用）
+
+▶ 以下诊断可以作为主诊断（临床常见误区，需明确）：
+- 脓毒症/败血症（A40~A41.x）→ 可以做主诊，进入SR1组，权重通常较高
+- 呼吸衰竭（J96.x）→ 可以做主诊
+- ARDS（J80）→ 可以做主诊
+- 心力衰竭（I50.x）→ 可以做主诊
+- 急性肾损伤（N17.x）→ 可以做主诊
+
+▶ 关键场景的主诊选择策略（务必比较权重后推荐）：
+- 脓毒症 + 重症肺炎 → 比较SR1（败血症）vs ER（呼吸感染）组权重，通常SR1更优
+- 脓毒症 + 腹腔感染 → 同上，通常SR1权重更优
+- 骨折 + 神经损伤 → 比较I系列 vs B系列权重，通常神经损伤做主诊B系列更优
+- 心梗 + PCI手术 → 主诊选心梗，进入F系列心血管手术组
+- 恶性肿瘤化疗入院 → 主诊选Z51.1（化学治疗），肿瘤作为其他诊断
+- 恶性肿瘤手术入院 → 主诊选肿瘤本身
+
+▶ 编码精确性：
+- 有特异性编码时必须使用（如A41.001金葡菌败血症，不得用A41.900未特指）
+- 手术编码须与实际术式一致
+- 病原体明确时必须使用含病原体的编码
+
+▶ 四川省特殊说明：
+- 四川省自2025年1月1日起统一执行四川DRG分组目录（基于国家CHS-DRG 2.0）
+- 各市州采用点数法付费，基准点数和系数由各地确定
+- 特例单议：DRG出院总病例的5%以内，适用于住院时间长、费用高、新药耗新技术、复杂危重症等
+- "双通道"药品暂不纳入DRG付费
+${deptExtra}
+
+【权重值要求】请在rw_estimate字段给出具体数值范围（如"7.5~8.2"），不要只输出"高/中/低"。
+
+权重估算必须遵循以下逻辑，**MCC是最重要的乘数因子**，绝不能只看手术类型：
+
+▌第一步：确定基础组别
+- 纯内科保守治疗（无手术无MCC）：0.5~1.2
+- 内科保守 + CC：1.2~2.0
+- 内科保守 + MCC（如有创通气、ECMO、脓毒性休克、多器官衰竭等）：**3.5~9.0**
+- 一般手术（阑尾切除/腹腔镜胆囊切除/TURP等）+ 无MCC：1.5~2.5
+- 一般手术 + MCC：2.5~4.5
+- 中等手术（关节置换初次/PCI单支/子宫切除等）+ 无MCC：2.5~4.0
+- 中等手术 + MCC：4.0~6.5
+- 复杂手术（脊柱多节段融合/多支PCI/肿瘤根治联合切除/CABG等）+ 无MCC：4.5~7.0
+- 复杂手术 + MCC：6.5~10.0
+- 极复杂手术（TAVR/ECMO辅助手术/全弓替换/异基因移植等）：8.0~18.0
+
+▌第二步：MCC叠加说明（内科组最易低估）
+- 有创机械通气（>96h）：+2.0~4.0（是内科组权重最强的MCC之一）
+- ECMO使用：+3.0~6.0
+- 脓毒性休克：+1.5~3.0
+- 多器官功能障碍（MODS，SOFA≥8）：+2.0~4.0
+- 连续肾脏替代治疗（CRRT）：+1.5~3.0
+- 以上MCC可叠加，脓毒症+有创机械通气典型RW范围：**6.5~9.5**
+
+▌第三步：常见高权重组合参考
+- 重症肺炎/脓毒症 + 有创机械通气（>96h）：7.0~9.5
+- 急性心肌梗死 + 心源性休克 + ECMO辅助PCI：9.0~14.0
+- ARDS + 有创通气 + CRRT：8.0~11.0
+- 脊柱多节段融合 + 术后肺栓塞（MCC）：7.0~10.0
+- 恶性肿瘤根治 + 术后ICU + 脓毒血症：6.0~9.0
+- 急性脑梗死 + 血管内取栓（机械取栓）：5.5~8.0
+- CABG + 多瓣膜置换联合手术：8.0~13.0
+
+**估算时，若存在有创通气/ECMO/脓毒性休克/MODS任意一项，权重基础值必须至少从3.5起算，不得低于3.0。**
+
+请严格以下面的JSON格式回复，不要有任何其他文字或markdown标记：
+{
+  "dept": "${dept}",
+  "diagnoses": [
+    {
+      "rank": 1,
+      "name": "诊断全名（仅诊断，不含手术操作）",
+      "icd_hint": "ICD-10编码（如I21.0）",
+      "tag": "main",
+      "reason": "选为主诊的具体理由，结合三最原则说明"
+    },
+    {
+      "rank": 2,
+      "name": "其他诊断名",
+      "icd_hint": "编码",
+      "tag": "mcc",
+      "reason": "该诊断属于MCC/CC/其他诊断，对DRG分组和权重的影响"
+    }
+  ],
+  "operations": [
+    {
+      "rank": 1,
+      "name": "手术或操作名称（最影响DRG权重的排第一）",
+      "icd9_hint": "ICD-9-CM-3操作编码（如36.01）",
+      "op_level": "主要手术/次要手术/诊断性操作",
+      "reason": "该操作对ADRG分组和权重的具体贡献，如：决定进入手术组vs内科组"
+    }
+  ],
+  "mdc_hint": "预计进入的MDC大类，如：F-循环系统疾病",
+  "adrg_hint": "预计ADRG方向，如：FB1-急性心肌梗死手术",
+  "rw_estimate": "2.5~3.2",
+  "rw_reason": "1-2句说明权重预估依据，需说明主要手术操作对权重的具体贡献",
+  "key_insight": "3-4句总结最关键的优化点、手术操作编码建议、潜在漏填的MCC/CC",
+  "missing_check": "医生应核查是否遗漏的高权重诊断或操作（若无则填null）",
+  "compliance_note": "合规提醒（若有虚增风险或注意事项请说明，若完全合规填null）"
+}
+
+注意：
+- diagnoses数组只放诊断，不放手术操作；tag只能是：main/mcc/cc/other
+- operations数组只放手术和操作，不放诊断；若无手术操作则填空数组[]
+- 两个数组均按对DRG权重的影响从大到小排序
+- **极其重要：diagnoses数组必须包含输入中的每一个诊断，不得遗漏任何一个！** 即使某个诊断对DRG权重影响不大（如高血压、糖尿病），也必须列出并标注为cc或other，给出排序位置。输入了多少个诊断，输出就必须有多少个诊断条目。
+- operations数组同理，输入的每一项手术/操作都必须列出`;
+}
+
+/* ══════════════════════════════════════════════════
+   CALL QWEN API
+══════════════════════════════════════════════════ */
+async function callQwenText(userContent) {
+  const key = getApiKey();
+  if (!key) throw new Error('NO_KEY');
+  const res = await fetch(QWEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+    body: JSON.stringify({
+      model: TEXT_MODEL,
+      messages: [
+        { role: 'system', content: buildSystemPrompt() },
+        { role: 'user',   content: userContent }
+      ],
+      temperature: 0.1,
+      max_tokens: 8000,
+      enable_thinking: false
+    })
+  });
+  if (!res.ok) {
+    let errMsg = 'HTTP ' + res.status;
+    try {
+      const errJson = await res.json();
+      errMsg = errJson.error?.message || errJson.message || errMsg;
+    } catch(e) {}
+    throw new Error(errMsg);
+  }
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content || '';
+}
+
+async function callQwenVL(base64, mediaType, textPrompt) {
+  const key = getApiKey();
+  if (!key) throw new Error('NO_KEY');
+
+  // Normalize MIME type — some browsers/WeChat return non-standard types
+  // Always re-encode as JPEG to ensure compatibility
+  let finalBase64 = base64;
+  let finalMime = 'image/jpeg';
+  try {
+    await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        // Limit to max 1920px on longest side to avoid request size limit
+        const MAX = 1920;
+        let w = img.naturalWidth, h = img.naturalHeight;
+        if (w > MAX || h > MAX) {
+          if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+          else       { w = Math.round(w * MAX / h); h = MAX; }
+        }
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        finalBase64 = dataUrl.split(',')[1];
+        finalMime   = 'image/jpeg';
+        resolve();
+      };
+      img.onerror = reject;
+      img.src = 'data:' + mediaType + ';base64,' + base64;
+    });
+  } catch(e) {
+    // If canvas re-encode fails, use original
+    finalBase64 = base64;
+    finalMime   = mediaType || 'image/jpeg';
+  }
+
+  const res = await fetch(QWEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+    body: JSON.stringify({
+      model: VL_MODEL,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: 'data:' + finalMime + ';base64,' + finalBase64 } },
+          { type: 'text',      text: textPrompt }
+        ]
+      }],
+      temperature: 0.1,
+      max_tokens: 2000,
+      enable_thinking: false
+    })
+  });
+  if (!res.ok) {
+    let errMsg = 'HTTP ' + res.status;
+    try {
+      const errJson = await res.json();
+      errMsg = errJson.error?.message || errJson.message || errMsg;
+    } catch(e) {}
+    throw new Error(errMsg);
+  }
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content || '';
+}
+
+/* ══════════════════════════════════════════════════
+   MAIN ANALYSIS FLOW
+══════════════════════════════════════════════════ */
+async function startAnalysis() {
+  const manual = document.getElementById('manual-input').value.trim();
+  if (!currentImg && !manual) { alert('请先上传图片或输入诊断内容'); return; }
+  if (!getApiKey()) {
+    if (confirm('尚未设置API密钥，是否现在设置？')) openModal();
+    return;
+  }
+
+  const btn = document.getElementById('analyze-btn');
+  btn.disabled = true;
+  document.getElementById('result-area').innerHTML = '';
+
+  try {
+    let diagText = manual;
+    let opText = document.getElementById('operation-input').value.trim();
+
+    if (currentImg) {
+      /* Step 1: OCR diagnosis image */
+      setLoading(15, '正在识别诊断图片（AI视觉模型）...');
+      const b64  = currentImg.split(',')[1];
+      const mime = currentImg.split(';')[0].split(':')[1];
+      const ocrPrompt = '请识别图片中所有的出院诊断，每行一个，只输出诊断名称，不要添加任何说明文字。如果图片中有手术操作，也一并列出，并在操作前加上"【手术操作】"标记。';
+      const ocrResult = await callQwenVL(b64, mime, ocrPrompt);
+      diagText = ocrResult.trim();
+      if (!diagText) throw new Error('未能识别到诊断内容，请确保图片清晰');
+
+      /* Auto-fill recognized text into input fields */
+      const lines = diagText.split('\n');
+      const diagLines = [];
+      const opLines = [];
+      let isOpSection = false;
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        if (trimmed.includes('【手术操作】')) {
+          isOpSection = true;
+          const opPart = trimmed.replace('【手术操作】', '').trim();
+          if (opPart) opLines.push(opPart);
+        } else if (isOpSection) {
+          opLines.push(trimmed);
+        } else {
+          diagLines.push(trimmed);
+        }
+      }
+      document.getElementById('manual-input').value = diagLines.join('\n');
+      if (opLines.length && !opText) {
+        opText = opLines.join('\n');
+        document.getElementById('operation-input').value = opText;
+      }
+      diagText = diagLines.join('\n') || diagText;
+    }
+
+    /* Step 1b: OCR operation image */
+    if (currentOpImg) {
+      setLoading(35, '正在识别手术操作单图片...');
+      const opB64  = currentOpImg.split(',')[1];
+      const opMime = currentOpImg.split(';')[0].split(':')[1];
+      const opOcrPrompt = '请识别图片中所有的手术操作名称和操作编码，每行一个，只输出操作名称（保留编码如有），不要添加任何说明文字。';
+      const opOcrResult = await callQwenVL(opB64, opMime, opOcrPrompt);
+      const opFromImg = opOcrResult.trim();
+      if (opFromImg) {
+        opText = opText ? opText + '\n' + opFromImg : opFromImg;
+        document.getElementById('operation-input').value = opText;
+      }
+    }
+
+    /* Step 2: DRG Analysis */
+    setLoading(55, '正在进行DRG分组规则分析（' + (currentDept === '通用' ? '通用规则' : currentDept + '专项规则') + '）...');
+    const prompt  = buildUserPrompt(diagText, currentDept, opText);
+    const rawResp = await callQwenText(prompt);
+
+    setLoading(85, '生成优化建议...');
+    let parsed;
+    try {
+      let clean = rawResp.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+      clean = clean.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      const m = clean.match(/\{[\s\S]*\}/);
+      if (m) clean = m[0];
+      parsed = JSON.parse(clean);
+    } catch {
+      /* Try to fix truncated JSON by closing brackets */
+      try {
+        let clean = rawResp.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+        clean = clean.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+        const m = clean.match(/\{[\s\S]*/);
+        if (m) {
+          let attempt = m[0];
+          /* Count unclosed brackets and braces */
+          const openBraces = (attempt.match(/\{/g)||[]).length - (attempt.match(/\}/g)||[]).length;
+          const openBrackets = (attempt.match(/\[/g)||[]).length - (attempt.match(/\]/g)||[]).length;
+          /* Remove trailing incomplete entry (after last comma in array) */
+          attempt = attempt.replace(/,\s*\{[^}]*$/, '');
+          attempt = attempt.replace(/,\s*"[^"]*$/, '');
+          for (let i = 0; i < openBrackets; i++) attempt += ']';
+          for (let i = 0; i < openBraces; i++) attempt += '}';
+          parsed = JSON.parse(attempt);
+        }
+      } catch { parsed = null; }
+    }
+
+    setLoading(100, '完成');
+    setTimeout(() => setLoading(0,''), 500);
+
+    if (parsed) {
+      renderResult(parsed, diagText);
+      saveHistory(parsed);
+    } else {
+      renderRaw(rawResp);
+    }
+  } catch (err) {
+    setLoading(0,'');
+    if (err.message === 'NO_KEY') {
+      document.getElementById('result-area').innerHTML = `<div class="alert alert-danger">未设置 API 密钥。<button onclick="openModal()" style="background:none;border:none;color:var(--red);text-decoration:underline;cursor:pointer;font-size:12px;">点击设置</button></div>`;
+    } else {
+      document.getElementById('result-area').innerHTML = `<div class="alert alert-danger">请求失败：${err.message}<br>请检查网络连接和API密钥是否有效。</div>`;
+    }
+  }
+  btn.disabled = false;
+}
+
+/* ══════════════════════════════════════════════════
+   RENDER RESULT
+══════════════════════════════════════════════════ */
+function tagLabel(t) { return {main:'主诊断',mcc:'MCC',cc:'CC',op:'手术操作',other:'其他诊断'}[t] || t; }
+function tagClass(t) { return {main:'tag-main',mcc:'tag-mcc',cc:'tag-cc',op:'tag-op',other:'tag-other'}[t] || 'tag-other'; }
+function rwClass(r)  {
+  if (!r) return 'rw-low';
+  // Numeric range like "2.5~3.2"
+  const m = r.match(/(\d+\.?\d*)/);
+  if (m) {
+    const v = parseFloat(m[1]);
+    return v >= 4 ? 'rw-high' : v >= 2 ? 'rw-mid' : 'rw-low';
+  }
+  return r==='高'?'rw-high':r==='中'?'rw-mid':'rw-low';
+}
+
+function renderResult(d, rawText) {
+  // ── 兼容旧格式（optimized_diagnoses）──
+  const diagList = d.diagnoses || (d.optimized_diagnoses||[]).filter(x => x.tag !== 'op');
+  const opList   = d.operations || (d.optimized_diagnoses||[]).filter(x => x.tag === 'op');
+
+  // ── 诊断列表 ──
+  const diagItems = diagList.map(diag => {
+    const rClass = diag.rank===1?'rank-1':diag.rank===2?'rank-2':'rank-n';
+    const tagMap  = {main:'主诊断',mcc:'MCC',cc:'CC',other:'其他诊断'};
+    const clsMap  = {main:'tag-main',mcc:'tag-mcc',cc:'tag-cc',other:'tag-other'};
+    const tagTxt  = tagMap[diag.tag] || diag.tag || '';
+    const tagCls  = clsMap[diag.tag] || 'tag-other';
+    return `<div class="diag-item">
+      <div class="rank-badge ${rClass}">${diag.rank}</div>
+      <div style="flex:1;min-width:0;">
+        <div class="diag-name">${diag.name}</div>
+        <div style="margin-top:3px;">
+          ${diag.icd_hint?`<span class="diag-meta">${diag.icd_hint}</span> &nbsp;`:''}
+          <span class="tag ${tagCls}">${tagTxt}</span>
+        </div>
+        <div class="diag-reason">${diag.reason||''}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // ── 手术操作列表 ──
+  const opLevelCls = {'主要手术':'tag-op-major','次要手术':'tag-op-minor','诊断性操作':'tag-op-diag'};
+  const opItems = opList.length ? opList.map(op => {
+    const rClass  = op.rank===1?'rank-1':op.rank===2?'rank-2':'rank-n';
+    const lvlCls  = opLevelCls[op.op_level] || 'tag-op-major';
+    return `<div class="diag-item">
+      <div class="rank-badge ${rClass}">${op.rank}</div>
+      <div style="flex:1;min-width:0;">
+        <div class="diag-name">${op.name}</div>
+        <div style="margin-top:3px;">
+          ${op.icd9_hint?`<span class="diag-meta">${op.icd9_hint}</span> &nbsp;`:''}
+          <span class="tag tag-op ${lvlCls}">${op.op_level||'手术操作'}</span>
+        </div>
+        <div class="diag-reason">${op.reason||''}</div>
+      </div>
+    </div>`;
+  }).join('') : `<div style="padding:12px 14px;font-size:12px;color:var(--text-hint);">无手术操作（内科保守治疗组）</div>`;
+
+  const mdc  = d.mdc_hint  ? `<span style="font-size:11px;color:var(--text-sub);margin-left:8px;">${d.mdc_hint}</span>` : '';
+  const adrg = d.adrg_hint ? `<div style="padding:6px 14px;background:var(--blue-light);font-size:11px;color:var(--blue-dark);">预计ADRG：${d.adrg_hint}</div>` : '';
+
+  const missing    = d.missing_check    ? `<div class="alert" style="margin:8px 14px 0;"><strong>🔍 请核查是否遗漏：</strong>${d.missing_check}</div>` : '';
+  const compliance = d.compliance_note  ? `<div class="alert alert-danger" style="margin:8px 14px 0;"><strong>⚠️ 合规提示：</strong>${d.compliance_note}</div>` : '';
+
+  document.getElementById('result-area').innerHTML = `
+    <!-- 诊断排序卡片 -->
+    <div class="card" style="margin-top:12px;">
+      <div class="card-header">
+        <h3>📋 出院诊断排序${mdc}</h3>
+        <span class="rw-badge ${rwClass(d.rw_estimate||'')}">RW ≈ ${d.rw_estimate||'—'}</span>
+      </div>
+      ${adrg}
+      <div>${diagItems}</div>
+    </div>
+    <!-- 手术操作排序卡片 -->
+    <div class="card">
+      <div class="card-header">
+        <h3>🔪 手术操作排序</h3>
+        <span style="font-size:11px;color:var(--text-sub);">按权重贡献排序</span>
+      </div>
+      <div>${opItems}</div>
+    </div>
+    <!-- 分析与合规 -->
+    ${missing}${compliance}
+    ${d.key_insight?`<div class="analysis-box" style="margin-top:8px;"><strong>关键分析：</strong>${d.key_insight}</div>`:''}
+    ${d.rw_reason?`<div class="analysis-box" style="margin-top:4px;"><strong>权重预估依据：</strong>${d.rw_reason}</div>`:''}
+  `;
+}
+
+function renderRaw(text) {
+  document.getElementById('result-area').innerHTML =
+    `<div class="card" style="margin-top:12px;"><div class="analysis-box" style="margin:14px;white-space:pre-wrap;">${text}</div></div>`;
+}
+
+/* ══════════════════════════════════════════════════
+   HISTORY
+══════════════════════════════════════════════════ */
+function saveHistory(d) {
+  const now = new Date();
+  historyArr.unshift({
+    time: now.toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'}),
+    date: now.toLocaleDateString('zh-CN', {month:'2-digit', day:'2-digit'}),
+    dept: d.dept || '通用',
+    data: d
+  });
+  persistHistory(historyArr);
+}
+
+function renderHistory() {
+  const el = document.getElementById('history-list');
+  if (!historyArr.length) {
+    el.innerHTML = `<div class="empty">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>
+      </svg>
+      <div>暂无分析记录</div>
+      <div style="font-size:11px;margin-top:4px;">完成AI分析后自动保存于此</div>
+    </div>`;
+    return;
+  }
+  const clearBtn = `<div style="text-align:right;margin-bottom:8px;">
+    <button onclick="clearHistory()" style="font-size:11px;color:var(--text-hint);background:none;border:none;cursor:pointer;padding:4px 0;">🗑 清空记录</button>
+  </div>`;
+  el.innerHTML = clearBtn + historyArr.map((h,i) => {
+    const d = h.data;
+    const main = d.diagnoses?.[0]?.name || d.optimized_diagnoses?.[0]?.name || '—';
+    const opName = d.operations?.[0]?.name || '';
+    return `<div class="hist-item" onclick="showHistDetail(${i})">
+      <div class="hist-meta">
+        <span class="hist-time">${h.date||''} ${h.time}</span>
+        <span class="rw-badge ${rwClass(d.rw_estimate||'')}">RW≈${d.rw_estimate||'—'}</span>
+      </div>
+      <div class="hist-name">${main}</div>
+      ${opName?`<div class="hist-dept" style="color:var(--green);">🔪 ${opName}</div>`:''}
+      <div class="hist-dept">${h.dept} · ${d.mdc_hint||''}</div>
+    </div>`;
+  }).join('');
+}
+
+function clearHistory() {
+  if (!confirm('确认清空所有历史记录？')) return;
+  historyArr.length = 0;
+  persistHistory(historyArr);
+  renderHistory();
+}
+
+function showHistDetail(i) {
+  const h = historyArr[i];
+  switchTab('analyze');
+  document.getElementById('result-area').innerHTML = '';
+  setTimeout(() => renderResult(h.data, ''), 50);
+}
+
+/* ══════════════════════════════════════════════════
+   PWA Service Worker
+══════════════════════════════════════════════════ */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    const swCode = `
+const CACHE = 'drg-v1';
+self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(['.']))));
+self.addEventListener('fetch', e => e.respondWith(
+  caches.match(e.request).then(r => r || fetch(e.request))
+));`;
+    const blob = new Blob([swCode], {type:'application/javascript'});
+    const url  = URL.createObjectURL(blob);
+    navigator.serviceWorker.register(url).catch(() => {});
+  });
+}
+
+/* Init */
+(function restoreSavedDept() {
+  try {
+    const saved = localStorage.getItem('drg_last_dept');
+    if (saved && saved !== '通用') {
+      const chip = document.querySelector('#analyze-dept-body .dept-chip[data-dept="' + saved + '"]');
+      if (chip) {
+        document.querySelectorAll('#analyze-dept-body .dept-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        currentDept = saved;
+        document.getElementById('analyze-dept-label').textContent = '当前：' + saved;
+      }
+    }
+  } catch(e) {}
+})();
+updatePlaceholder();
+</script>
+</body>
+</html>
