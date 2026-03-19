@@ -1917,19 +1917,52 @@ async function startVerify() {
 
 ${JSON.stringify(lastParsed, null, 2)}
 
-请仅回答以下五个问题：
+请仅回答以下五个问题，**必须用纯文本回答，不得输出JSON或代码块**：
 1. 主诊断选择是否存在高套风险？请说明理由。
 2. 手术操作编码是否存在夸大或不符合实际情况的风险？
 3. MCC/CC填报是否有缺乏临床依据的风险（如无记录的并发症）？
 4. 是否存在低倍率风险（如高权重手术但住院天数极短，或权重与费用倒挂）？
 5. 收治科室与主诊断是否匹配？是否存在"借床"或跨科室高套嫌疑？
 
-请用简洁的中文回答，每个问题不超过3句话。若某问题无风险则回复"✅ 无风险"。`;
+请用简洁的中文逐条回答，每条不超过3句话。若某问题无风险则直接写"✅ 无风险"。不要输出任何JSON、代码块或多余格式。`;
 
     const verifyResp = await callQwenText(verifyPrompt);
 
-    const clean = escHtml(verifyResp.replace(/<think>[\s\S]*?<\/think>/g,'').trim());
-    banner.innerHTML = `<div style="flex:1;"><strong>🔍 合规校验结果：</strong><br><span style="white-space:pre-wrap;">${clean}</span></div>`;
+    // 去除think标签和markdown代码块
+    let cleaned = verifyResp.replace(/<think>[\s\S]*?<\/think>/g,'').trim();
+    cleaned = cleaned.replace(/```json\s*/g,'').replace(/```\s*/g,'').trim();
+
+    // 尝试解析JSON（若AI返回了JSON格式）
+    let htmlContent = '';
+    try {
+      const parsed = JSON.parse(cleaned);
+      // 如果是 {q1,q2,q3,q4,q5} 结构
+      const qLabels = {
+        q1: '1. 主诊断高套风险',
+        q2: '2. 手术操作编码风险',
+        q3: '3. MCC/CC填报依据风险',
+        q4: '4. 低倍率风险',
+        q5: '5. 科室与主诊匹配'
+      };
+      htmlContent = Object.entries(qLabels).map(([key, label]) => {
+        const val = parsed[key] || parsed[key.toUpperCase()] || '—';
+        const isOk = val.includes('无风险') || val.includes('✅');
+        const color = isOk ? 'var(--green)' : 'var(--amber)';
+        const icon = isOk ? '✅' : '⚠️';
+        return `<div style="margin:6px 0;padding:6px 8px;border-radius:6px;background:${isOk?'var(--green-bg)':'var(--amber-bg)'};">
+          <div style="font-size:11px;font-weight:600;color:${color};margin-bottom:2px;">${icon} ${label}</div>
+          <div style="font-size:12px;color:var(--text-main);line-height:1.5;">${escHtml(val.replace(/^✅\s*无风险[：:]?\s*/,''))}</div>
+        </div>`;
+      }).join('');
+    } catch(e) {
+      // 非JSON：直接文本显示，同时把数字列表项美化
+      htmlContent = `<div style="font-size:12px;line-height:1.7;white-space:pre-wrap;">${escHtml(cleaned)}</div>`;
+    }
+
+    banner.innerHTML = `<div style="flex:1;width:100%;">
+      <strong style="font-size:13px;">🔍 合规校验结果</strong>
+      <div style="margin-top:8px;">${htmlContent}</div>
+    </div>`;
   } catch(err) {
     banner.innerHTML = `<div style="flex:1;color:var(--red);">校验失败：${escHtml(err.message)}</div>`;
   }
