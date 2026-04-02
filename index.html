@@ -281,6 +281,58 @@ textarea::placeholder { color: var(--text-hint); }
   color: var(--red);
 }
 
+/* ─── 合规校验：前端规则引擎样式 ────────────────────── */
+.diag-item.compliance-error {
+  background: var(--red-bg);
+  border-left: 3px solid var(--red);
+}
+.tag-compliance-err {
+  background: var(--red); color: #fff;
+  font-size: 10px; font-weight: 600;
+  padding: 1px 7px; border-radius: 10px;
+  margin-right: 3px; margin-top: 3px;
+  display: inline-block;
+}
+.tag-grey-code {
+  background: var(--amber-bg); color: var(--amber);
+  font-size: 10px; font-weight: 600;
+  padding: 1px 7px; border-radius: 10px;
+  margin-right: 3px; margin-top: 3px;
+  display: inline-block;
+}
+.tag-hallucination {
+  background: #5C3A00; color: #FAC775;
+  font-size: 10px; font-weight: 600;
+  padding: 1px 7px; border-radius: 10px;
+  margin-right: 3px; margin-top: 3px;
+  display: inline-block;
+}
+.compliance-banner {
+  margin: 10px 0 4px;
+  background: var(--red-bg);
+  border: 1.5px solid #F0A0A0;
+  border-radius: var(--radius-md);
+  padding: 10px 13px;
+  font-size: 12px;
+  color: var(--red);
+  line-height: 1.6;
+}
+.compliance-banner strong { font-weight: 600; font-size: 13px; display: block; margin-bottom: 4px; }
+.compliance-banner ul { margin: 4px 0 0 16px; padding: 0; }
+.compliance-banner li { margin-bottom: 2px; }
+.input-compliance-warn {
+  margin: 6px 0 10px;
+  background: var(--amber-bg);
+  border: 1px solid #E5C97A;
+  border-radius: var(--radius-md);
+  padding: 9px 12px;
+  font-size: 12px;
+  color: var(--amber);
+  line-height: 1.6;
+  display: none;
+}
+.input-compliance-warn.visible { display: block; }
+
 /* ─── Rule Items ─────────────────────────────────────── */
 .rule-item {
   padding: 11px 14px; border-bottom: 1px solid var(--gray-line);
@@ -560,8 +612,10 @@ textarea::placeholder { color: var(--text-hint); }
 
       <!-- Manual input (right after photo upload) -->
       <div class="or-divider">或手动输入诊断（无图片时）</div>
-      <textarea id="manual-input"
+      <textarea id="manual-input" oninput="checkInputCompliance(this.value)"
         placeholder="每行输入一个诊断，例如：&#10;冠状动脉粥样硬化性心脏病&#10;急性前壁心肌梗死&#10;高血压病3级（极高危）&#10;2型糖尿病&#10;心功能不全（NYHA Ⅱ级）"></textarea>
+      <!-- 输入实时合规提示 -->
+      <div class="input-compliance-warn" id="input-compliance-warn"></div>
 
       <!-- Operation input -->
       <div class="section-label" style="margin-top:14px;">手术 / 操作列表（对权重影响最大）</div>
@@ -1777,7 +1831,19 @@ async function startAnalysis() {
     setTimeout(() => setLoading(0,''), 500);
 
     if (parsed) {
-      renderResult(parsed, diagText);
+      /* Layer 2：AI结果结构验证 */
+      const validation = validateResult(parsed, diagText);
+      if (!validation.valid) {
+        /* 验证失败：在结果区顶部显示错误，但仍渲染结果供参考 */
+        const errHtml = `<div class="compliance-banner">
+          <strong>⛔ 合规校验发现问题（结果仅供参考，请勿直接使用）</strong>
+          <ul>${validation.errors.map(e => `<li>${e}</li>`).join('')}</ul>
+        </div>`;
+        document.getElementById('result-area').innerHTML = errHtml;
+        renderResult(parsed, diagText);
+      } else {
+        renderResult(parsed, diagText);
+      }
       saveHistory(parsed);
     } else {
       renderRaw(rawResp);
@@ -1814,6 +1880,14 @@ function renderResult(d, rawText) {
   const diagList = d.diagnoses || (d.optimized_diagnoses||[]).filter(x => x.tag !== 'op');
   const opList   = d.operations || (d.optimized_diagnoses||[]).filter(x => x.tag === 'op');
 
+  /* Layer 3 准备：原始输入行列表（用于幻觉检测） */
+  const origLines = rawText
+    ? rawText.split('\n').map(l => l.trim().replace(/^\d+[\.、\s]+/, '')).filter(Boolean)
+    : [];
+
+  /* 统计本次渲染的合规问题（用于结尾汇总） */
+  const renderErrors = [];
+
   // ── 诊断列表 ──
   const diagItems = diagList.map(diag => {
     const rClass = diag.rank===1?'rank-1':diag.rank===2?'rank-2':'rank-n';
@@ -1821,13 +1895,23 @@ function renderResult(d, rawText) {
     const clsMap  = {main:'tag-main',mcc:'tag-mcc',cc:'tag-cc',other:'tag-other'};
     const tagTxt  = tagMap[diag.tag] || diag.tag || '';
     const tagCls  = clsMap[diag.tag] || 'tag-other';
-    return `<div class="diag-item">
+
+    /* Layer 3：逐条审计 */
+    const audit = auditDiagItem(diag, origLines);
+    const complianceTags = buildComplianceTags(audit, diag.name || '');
+    const rowClass = audit.isForbiddenMain ? 'diag-item compliance-error' : 'diag-item';
+
+    if (audit.isForbiddenMain) renderErrors.push(`「${diag.name}」被错误排在主诊位置`);
+    if (audit.isHallucination) renderErrors.push(`「${diag.name}」疑为AI新增，原始输入中未找到`);
+
+    return `<div class="${rowClass}">
       <div class="rank-badge ${rClass}">${diag.rank}</div>
       <div style="flex:1;min-width:0;">
         <div class="diag-name">${diag.name}</div>
         <div style="margin-top:3px;">
           ${diag.icd_hint?`<span class="diag-meta">${diag.icd_hint}</span> &nbsp;`:''}
           <span class="tag ${tagCls}">${tagTxt}</span>
+          ${complianceTags}
         </div>
         <div class="diag-reason">${diag.reason||''}</div>
       </div>
@@ -1839,6 +1923,8 @@ function renderResult(d, rawText) {
   const opItems = opList.length ? opList.map(op => {
     const rClass  = op.rank===1?'rank-1':op.rank===2?'rank-2':'rank-n';
     const lvlCls  = opLevelCls[op.op_level] || 'tag-op-major';
+    /* 检查操作编码是否灰码 */
+    const opGreyCode = COMPLIANCE_RULES.GREY_CODE.test(op.icd9_hint || '');
     return `<div class="diag-item">
       <div class="rank-badge ${rClass}">${op.rank}</div>
       <div style="flex:1;min-width:0;">
@@ -1846,6 +1932,7 @@ function renderResult(d, rawText) {
         <div style="margin-top:3px;">
           ${op.icd9_hint?`<span class="diag-meta">${op.icd9_hint}</span> &nbsp;`:''}
           <span class="tag tag-op ${lvlCls}">${op.op_level||'手术操作'}</span>
+          ${opGreyCode ? '<span class="tag-grey-code" title="疑似灰码，建议使用更精确操作编码">⚠ 疑似灰码</span>' : ''}
         </div>
         <div class="diag-reason">${op.reason||''}</div>
       </div>
@@ -1858,9 +1945,19 @@ function renderResult(d, rawText) {
   const missing    = d.missing_check    ? `<div class="alert" style="margin:8px 14px 0;"><strong>🔍 请核查是否遗漏：</strong>${d.missing_check}</div>` : '';
   const compliance = d.compliance_note  ? `<div class="alert alert-danger" style="margin:8px 14px 0;"><strong>⚠️ 合规提示：</strong>${d.compliance_note}</div>` : '';
 
-  document.getElementById('result-area').innerHTML = `
+  /* Layer 3 渲染层汇总警告横幅（仅在有错误时显示，避免与 Layer 2 重复） */
+  const renderBanner = renderErrors.length ? `<div class="compliance-banner">
+    <strong>⛔ 前端规则校验发现以下问题，已在列表中标红：</strong>
+    <ul>${renderErrors.map(e => `<li>${e}</li>`).join('')}</ul>
+  </div>` : '';
+
+  const resultArea = document.getElementById('result-area');
+  /* 保留 Layer 2 已写入的错误横幅（如有），在其后追加结果 */
+  const existingBanner = resultArea.querySelector('.compliance-banner');
+  const insertHTML = `
+    ${renderBanner}
     <!-- 诊断排序卡片 -->
-    <div class="card" style="margin-top:12px;">
+    <div class="card" style="margin-top:${renderBanner || existingBanner ? '4' : '12'}px;">
       <div class="card-header">
         <h3>📋 出院诊断排序${mdc}</h3>
         <span class="rw-badge ${rwClass(d.rw_estimate||'')}">RW ≈ ${d.rw_estimate||'—'}</span>
@@ -1881,6 +1978,13 @@ function renderResult(d, rawText) {
     ${d.key_insight?`<div class="analysis-box" style="margin-top:8px;"><strong>关键分析：</strong>${d.key_insight}</div>`:''}
     ${d.rw_reason?`<div class="analysis-box" style="margin-top:4px;"><strong>权重预估依据：</strong>${d.rw_reason}</div>`:''}
   `;
+
+  if (existingBanner) {
+    /* Layer 2 已写入横幅，在横幅后追加 */
+    existingBanner.insertAdjacentHTML('afterend', insertHTML);
+  } else {
+    resultArea.innerHTML = insertHTML;
+  }
 }
 
 function renderRaw(text) {
@@ -1945,6 +2049,165 @@ function showHistDetail(i) {
   switchTab('analyze');
   document.getElementById('result-area').innerHTML = '';
   setTimeout(() => renderResult(h.data, ''), 50);
+}
+
+/* ══════════════════════════════════════════════════
+   前端合规规则引擎 — 三层保障
+   Layer 1: 输入预检（实时提示）
+   Layer 2: AI结果结构验证（JSON校验）
+   Layer 3: 渲染层标红（可视标注）
+══════════════════════════════════════════════════ */
+
+/* ── 规则数据库 ────────────────────────────────── */
+const COMPLIANCE_RULES = {
+
+  /* 绝对禁止作主诊断的关键词 — 前端硬规则 */
+  FORBIDDEN_MAIN: [
+    /* 休克类（R57.x） */
+    { pattern: /休克/, label: '休克类编码（R57.x）', tip: '所有休克均为附加编码，须选原发病为主诊' },
+    { pattern: /心源性休克/, label: '心源性休克（R57.0）', tip: '附加编码，主诊选心脏原发病' },
+    { pattern: /脓毒性休克|感染性休克/, label: '脓毒性休克（R57.2）', tip: '附加编码，主诊选脓毒症或感染原发病' },
+    { pattern: /低血容量性休克|血容量不足性休克|失血性休克/, label: '低血容量性休克（R57.1）', tip: '附加编码，主诊选出血或原发病' },
+    /* 呼吸继发状态 */
+    { pattern: /呼吸衰竭/, label: '呼吸衰竭（J96.x）', tip: '原发病继发状态，禁止主诊，列为MCC' },
+    { pattern: /急性呼吸衰竭/, label: '急性呼吸衰竭（J96.0）', tip: '禁止主诊，须追溯原发病' },
+    { pattern: /慢性呼吸衰竭/, label: '慢性呼吸衰竭（J96.1）', tip: '禁止主诊，须追溯原发病' },
+    /* ARDS — 有原发病时禁止 */
+    { pattern: /急性呼吸窘迫综合征|ARDS/, label: 'ARDS（J80）', tip: '有明确原发病时禁止主诊，应列MCC' },
+    /* SIRS / DIC */
+    { pattern: /全身炎症反应综合征|SIRS/, label: 'SIRS（R65.x）', tip: '附加编码，禁止主诊' },
+    { pattern: /弥散性血管内凝血|DIC(?![A-Z])\b/, label: 'DIC（D65）', tip: '附加编码，禁止主诊，列MCC' },
+    /* 纯症状编码 */
+    { pattern: /^发热$|不明原因发热/, label: '发热（R50.x）', tip: '症状编码，有原发病时禁止主诊' },
+    { pattern: /^低血压$/, label: '低血压（R03.1）', tip: '症状编码，禁止主诊' },
+    { pattern: /^呼吸困难$/, label: '呼吸困难（R06.x）', tip: '症状编码，禁止主诊' },
+    { pattern: /^意识障碍$|^意识不清$|^昏迷$/, label: '意识障碍（R41.x）', tip: '症状编码，须追溯原发病' },
+  ],
+
+  /* 灰码特征：ICD编码以 .x00 或 x00 结尾提示为非特指码 */
+  GREY_CODE: /\b[A-Z]\d{2}\.?\d{0,2}0{2,}\b/,
+
+  /* 灰码关键词提示（常见非特指诊断） */
+  GREY_DIAG_PATTERNS: [
+    /未特指的.+(?:炎|病|症|综合征)$/,
+    /其他.+(?:炎|病|症|综合征)$/,
+    /不明原因.+(?:炎|病|症)$/,
+  ],
+};
+
+/* ── Layer 1：输入实时预检（textarea oninput） ── */
+function checkInputCompliance(text) {
+  const warnEl = document.getElementById('input-compliance-warn');
+  if (!warnEl) return;
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  if (!lines.length) { warnEl.classList.remove('visible'); return; }
+
+  /* 只检查第一行（主诊位置） */
+  const firstLine = lines[0];
+  const hits = COMPLIANCE_RULES.FORBIDDEN_MAIN.filter(r => r.pattern.test(firstLine));
+
+  if (hits.length) {
+    const tip = hits[0];
+    warnEl.innerHTML = `⚠️ <strong>主诊位置警示：</strong>「${firstLine}」疑似<strong>${tip.label}</strong><br>${tip.tip}。请将此诊断移至第2行或之后，并在第1行填写原发病。`;
+    warnEl.classList.add('visible');
+  } else {
+    warnEl.classList.remove('visible');
+  }
+}
+
+/* 绑定到 textarea 的 input 事件 */
+document.addEventListener('DOMContentLoaded', () => {
+  const ta = document.getElementById('manual-input');
+  if (ta) ta.addEventListener('input', () => checkInputCompliance(ta.value));
+});
+
+/* ── Layer 2：AI结果结构验证 ─────────────────── */
+/**
+ * 验证 parsed JSON，返回 { valid, errors }
+ * errors 是字符串数组，每条描述一个问题
+ */
+function validateResult(parsed, originalInputText) {
+  const errors = [];
+  const diagnoses = parsed.diagnoses || [];
+
+  /* 2-1: tag="main" 必须唯一 */
+  const mainItems = diagnoses.filter(d => d.tag === 'main');
+  if (mainItems.length === 0) errors.push('未找到主诊断（tag=main），分组结果无效');
+  if (mainItems.length > 1)  errors.push(`存在 ${mainItems.length} 个主诊断，违反唯一性规则`);
+
+  /* 2-2: rank=1 的诊断不得为禁忌 */
+  const rank1 = diagnoses.find(d => d.rank === 1);
+  if (rank1) {
+    const name = rank1.name || '';
+    for (const rule of COMPLIANCE_RULES.FORBIDDEN_MAIN) {
+      if (rule.pattern.test(name)) {
+        errors.push(`主诊断「${name}」为${rule.label}，不得作为主诊断（${rule.tip}）`);
+        break;
+      }
+    }
+  }
+
+  /* 2-3: 检测AI幻觉（输出中存在输入没有的诊断） */
+  if (originalInputText) {
+    const inputLines = originalInputText.split('\n').map(l => l.trim().replace(/^\d+[\.、\s]+/, '')).filter(Boolean);
+    const hallucinations = [];
+    for (const diag of diagnoses) {
+      const dName = (diag.name || '').trim();
+      if (!dName) continue;
+      /* 宽松匹配：输入中任何一行包含该诊断名的核心词（前4字） */
+      const core = dName.slice(0, 6);
+      const found = inputLines.some(line => line.includes(core) || dName.includes(line.slice(0, 6)));
+      if (!found) hallucinations.push(dName);
+    }
+    if (hallucinations.length) {
+      errors.push(`AI新增了以下输入中没有的诊断（疑似幻觉）：${hallucinations.join('、')}`);
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+/* ── Layer 3：渲染层合规标注（增强版 renderResult） ── */
+/**
+ * 检查单条诊断是否触发前端规则
+ * 返回 { forbidden, greyCode, hallucination }
+ */
+function auditDiagItem(diag, originalLines) {
+  const name = diag.name || '';
+  const icd  = diag.icd_hint || '';
+
+  /* 禁止作主诊且当前 tag=main 或 rank=1 */
+  const isForbiddenMain = (diag.tag === 'main' || diag.rank === 1) &&
+    COMPLIANCE_RULES.FORBIDDEN_MAIN.some(r => r.pattern.test(name));
+
+  /* 灰码检测 */
+  const isGreyCode = COMPLIANCE_RULES.GREY_CODE.test(icd);
+
+  /* 幻觉检测 */
+  let isHallucination = false;
+  if (originalLines && originalLines.length) {
+    const core = name.slice(0, 6);
+    isHallucination = !originalLines.some(l => l.includes(core) || name.includes(l.slice(0, 6)));
+  }
+
+  return { isForbiddenMain, isGreyCode, isHallucination };
+}
+
+/* ── 新增警告标记生成器 ── */
+function buildComplianceTags(audit, diagName) {
+  let tags = '';
+  if (audit.isForbiddenMain) {
+    const rule = COMPLIANCE_RULES.FORBIDDEN_MAIN.find(r => r.pattern.test(diagName));
+    const label = rule ? rule.label : '禁止主诊';
+    tags += `<span class="tag-compliance-err" title="${rule ? rule.tip : ''}">⛔ 禁止主诊·${label}</span>`;
+  }
+  if (audit.isGreyCode) {
+    tags += `<span class="tag-grey-code" title="疑似灰码（00码），建议使用更细化的编码">⚠ 疑似灰码</span>`;
+  }
+  if (audit.isHallucination) {
+    tags += `<span class="tag-hallucination" title="此诊断在原始输入中未找到，疑为AI自行添加">🔴 AI新增·需核实</span>`;
+  }
+  return tags;
 }
 
 /* ══════════════════════════════════════════════════
